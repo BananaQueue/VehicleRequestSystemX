@@ -1,0 +1,1039 @@
+:root {
+  --primary-color: #1b3c53;
+  --secondary-color: #799eff;
+  --accent-color: #ffbc4c;
+  --success-color: #22c55e;
+  --warning-color: #f59e0b;
+  --danger-color: #ef4444;
+  --bg-primary: #f8fafc;
+  --bg-card: #ffffff;
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --border-color: #e2e8f0;
+  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+
+  /* Login-specific variables */
+  --login-gradient: linear-gradient(
+    135deg,
+    var(--primary-color) 0%,
+    #2563eb 50%,
+    #667eea 100%
+  );
+  --card-blur: blur(20px);
+  --login-shadow: 0 25px 50px rgba(27, 60, 83, 0.15);
+  --hover-shadow: 0 30px 60px rgba(27, 60, 83, 0.2);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Inter", sans-serif;
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+  color: var(--text-primary);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* ========================================
+           LOGIN PAGE STYLES
+======================================== */
+
+body.login-page {
+  background: var(--login-gradient);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Animated background elements */
+.login-bg-decoration {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.floating-shape {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  animation: floatUpDown 6s ease-in-out infinite;
+}
+
+.floating-shape:nth-child(1) {
+  width: 80px;
+  height: 80px;
+  top: 20%;
+  left: 15%;
+  animation-delay: 0s;
+}
+
+.floating-shape:nth-child(2) {
+  width: 120px;
+  height: 120px;
+  top: 60%;
+  right: 20%;
+  animation-delay: 2s;
+}
+
+.floating-shape:nth-child(3) {
+  width: 60px;
+  height: 60px;
+  bottom: 30%;
+  left: 20%;
+  animation-delay: 4s;
+}
+
+.floating-shape:nth-child(4) {
+  width: 100px;
+  height: 100px;
+  top: 15%;
+  right: 30%;
+  animation-delay: 1s;
+}
+
+@keyframes floatUpDown {
+  0%,
+  100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-20px) rotate(180deg);
+  }
+}
+
+.login-wrapper {
+  width: 100%;
+  max-width: 450px;
+  padding: 20px;
+  position: relative;
+  z-index: 10;
+}
+
+.login-container {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: var(--card-blur);
+  border-radius: 24px;
+  padding: 3rem;
+  box-shadow: var(--login-shadow);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.4s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.login-container:hover {
+  transform: translateY(-5px);
+  box-shadow: var(--hover-shadow);
+}
+
+.login-container::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--secondary-color),
+    var(--accent-color)
+  );
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.login-icon {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 1.5rem;
+  background: var(--login-gradient);
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 2rem;
+  box-shadow: 0 10px 25px rgba(27, 60, 83, 0.3);
+}
+
+.login-title {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--primary-color);
+  margin-bottom: 0.5rem;
+}
+
+.login-subtitle {
+  color: var(--text-secondary);
+  font-size: 1rem;
+  margin-bottom: 0;
+}
+
+.form-floating {
+  margin-bottom: 1.5rem;
+  position: relative;
+}
+
+.form-floating input {
+  border: 2px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1.25rem 1rem 0.5rem 3rem;
+  font-size: 1rem;
+  transition: all 0.3s ease;
+  background: var(--bg-card);
+}
+
+.form-floating input:focus {
+  border-color: var(--secondary-color);
+  box-shadow: 0 0 0 0.2rem rgba(121, 158, 255, 0.25);
+  background: white;
+}
+
+.form-floating label {
+  position: absolute;
+  top: 50%;
+  left: 3rem;
+  transform: translateY(-50%);
+  color: var(--text-secondary);
+  font-weight: 500;
+  pointer-events: none;
+  transition: 0.2s ease all;
+}
+
+/* When input has text or focus */
+.form-floating input:focus ~ label,
+.form-floating input:not(:placeholder-shown) ~ label {
+  top: 0.8rem;
+  left: 3rem;
+  font-size: 0.8rem;
+  color: var(--secondary-color);
+}
+
+.input-icon {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  z-index: 5;
+  transition: color 0.3s ease;
+}
+
+.login-btn {
+  width: 100%;
+  padding: 1rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 12px;
+  background: var(--login-gradient);
+  color: white;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+}
+
+.login-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(27, 60, 83, 0.3);
+}
+
+.login-btn:active {
+  transform: translateY(0);
+}
+
+.login-btn::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.2),
+    transparent
+  );
+  transition: left 0.5s ease;
+}
+
+.login-btn:hover::before {
+  left: 100%;
+}
+
+.back-link {
+  text-align: center;
+  margin-top: 1.5rem;
+}
+
+.back-link a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: color 0.3s ease;
+}
+
+.back-link a:hover {
+  color: var(--primary-color);
+}
+
+/* Enhanced Alert Styling for Login */
+.login-alert {
+  border: none;
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  background: rgba(239, 68, 68, 0.1);
+  color: #991b1b;
+  border-left: 4px solid var(--danger-color);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.alert-icon {
+  font-size: 1.2rem;
+}
+
+/* ========================================
+           SIMPLE FORM PAGE STYLES
+======================================== */
+.simple-form-page-container {
+  background: var(--bg-card);
+  border-radius: 16px;
+  padding: 2rem 2.5rem; /* Slightly reduced padding */
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+  max-width: 500px; /* Max width for better control */
+  width: 100%;
+}
+
+
+.simple-form-page-container .form-label {
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.simple-form-page-container .form-control,
+.simple-form-page-container .form-select {
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
+}
+
+.simple-form-page-container .form-control:focus,
+.simple-form-page-container .form-select:focus {
+  border-color: var(--secondary-color);
+  box-shadow: 0 0 0 0.2rem rgba(121, 158, 255, 0.25);
+  background-color: var(--bg-card);
+}
+
+.simple-form-page-container .btn-primary {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.simple-form-page-container .btn-primary:hover {
+  background: #0f2937;
+  border-color: #0f2937;
+}
+
+.simple-form-page-container .btn-secondary {
+  background: #e2e8f0;
+  border-color: #e2e8f0;
+  color: var(--text-secondary);
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.simple-form-page-container .btn-secondary:hover {
+  background: #cbd5e1;
+  border-color: #cbd5e1;
+}
+
+.simple-form-page-container .alert {
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.simple-form-page-container .alert-danger {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #991b1b;
+  border-left: 4px solid var(--danger-color);
+}
+
+.simple-form-page-container .alert-success {
+  background-color: rgba(34, 197, 94, 0.1);
+  color: #166534;
+  border-left: 4px solid var(--success-color);
+}
+
+/* Icons within form fields */
+.simple-form-page-container .input-group-icon {
+  position: relative;
+}
+
+.simple-form-page-container .input-group-icon .form-control {
+  padding-left: 2.75rem; /* Make space for the icon */
+}
+
+.simple-form-page-container .input-group-icon .input-icon {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  transform: translateY(50%);
+  color: var(--text-secondary);
+  font-size: 1rem;
+  z-index: 5;
+}
+
+/* Dark mode adjustments for new class */
+@media (prefers-color-scheme: dark) {
+  .simple-form-page-container {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+  }
+
+  .simple-form-page-container .form-control,
+  .simple-form-page-container .form-select {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+  }
+
+  .simple-form-page-container .btn-secondary {
+    background: #334155;
+    border-color: #334155;
+    color: var(--text-secondary);
+  }
+
+  .simple-form-page-container .btn-secondary:hover {
+    background: #475569;
+    border-color: #475569;
+  }
+}
+
+/* ========================================
+           DASHBOARD & GENERAL STYLES
+======================================== */
+
+/* Modern Header */
+.modern-header {
+  background: linear-gradient(135deg, var(--primary-color) 0%, #2563eb 100%);
+  color: white;
+  padding: 2rem;
+  margin-bottom: 2rem;
+  box-shadow: var(--shadow);
+}
+
+.modern-header h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.header-icon {
+  font-size: 2rem;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 0.5rem;
+  border-radius: 12px;
+}
+
+.user-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.welcome-text {
+  font-size: 1.1rem;
+  opacity: 0.9;
+  flex: 1;
+}
+
+.user-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Quick Stats Dashboard */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.stat-card {
+  background: var(--bg-card);
+  padding: 1.5rem;
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+  transition: all 0.3s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+}
+
+.stat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.stat-icon {
+  font-size: 2rem;
+  padding: 0.75rem;
+  border-radius: 12px;
+  background: rgba(var(--primary-rgb), 0.1);
+}
+
+.stat-number {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.stat-label {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Navigation Tabs */
+.nav-container {
+  background: var(--bg-card);
+  padding: 1rem;
+  border-radius: 16px;
+  margin-bottom: 2rem;
+  box-shadow: var(--shadow);
+}
+
+.nav-tabs {
+  border: none;
+}
+
+.nav-tabs .nav-link {
+  border: none;
+  color: var(--text-secondary);
+  font-weight: 500;
+  padding: 0.75rem 1.5rem;
+  border-radius: 12px;
+  margin-right: 0.5rem;
+  transition: all 0.2s ease;
+}
+
+.nav-tabs .nav-link.active {
+  background: var(--primary-color);
+  color: white;
+}
+
+.nav-tabs .nav-link:hover:not(.active) {
+  background: #f1f5f9;
+  color: var(--primary-color);
+}
+
+/* Enhanced Vehicle Cards */
+.vehicles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 3rem;
+}
+
+.vehicle-card {
+  background: var(--bg-card);
+  border-radius: 20px;
+  padding: 1.5rem;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.vehicle-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--success-color);
+  transition: all 0.3s ease;
+}
+
+.vehicle-card.status-assigned::before {
+  background: var(--danger-color);
+}
+
+.vehicle-card.status-returning::before {
+  background: var(--warning-color);
+}
+
+.vehicle-card.status-maintenance::before {
+  background: var(--text-secondary);
+}
+
+.vehicle-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+}
+
+.vehicle-icon {
+  font-size: 3rem;
+  text-align: center;
+  margin-bottom: 1rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.vehicle-plate {
+  font-size: 1.75rem;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 1rem;
+  color: var(--primary-color);
+}
+
+.vehicle-details {
+  min-height: 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.detail-label {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.detail-value {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 25px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.status-available {
+  background: rgba(34, 197, 94, 0.1);
+  color: #166534;
+  border: 2px solid rgba(34, 197, 94, 0.2);
+}
+
+.status-assigned {
+  background: rgba(239, 68, 68, 0.1);
+  color: #991b1b;
+  border: 2px solid rgba(239, 68, 68, 0.2);
+}
+
+.status-returning {
+  background: rgba(245, 158, 11, 0.1);
+  color: #92400e;
+  border: 2px solid rgba(245, 158, 11, 0.2);
+}
+
+.status-maintenance {
+  background: rgba(63, 61, 58, 0.1);
+  color: #393431;
+  border: 2px solid rgba(200, 194, 183, 0.2);
+}
+
+/* Action Buttons */
+.action-group {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.btn-modern {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-weight: 500;
+  border: none;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+  color: rgba(255, 255, 255, 0.781);
+}
+
+.btn-modern:hover {
+   color: white;
+}
+.btn-primary-modern {
+  background: var(--primary-color);
+  color: rgba(255, 255, 255, 0.781);
+}
+
+.btn-primary-modern:hover {
+  background: #0f2937;
+  color: white;
+}
+
+.btn-success-modern {
+  background: var(--success-color);
+  color: white;
+}
+
+.btn-warning-modern {
+  background: var(--warning-color);
+  color: white;
+}
+
+.btn-danger-modern {
+  background: var(--danger-color);
+  color: white;
+}
+
+/* Tables */
+.table-container {
+  background: var(--bg-card);
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: var(--shadow);
+  margin-bottom: 2rem;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.section-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--primary-color);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.table th {
+  background: #f8fafc;
+  border: none;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  padding: 1rem;
+}
+
+.table td {
+  border: none;
+  padding: 1rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.table tbody tr:hover {
+  background: #f8fafc;
+}
+
+/* Alert Improvements */
+.modern-alert {
+  border: none;
+  border-radius: 12px;
+  padding: 1rem 1.5rem;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* ========================================
+           RESPONSIVE DESIGN
+           ======================================== */
+
+@media (max-width: 768px) {
+  /* Login responsive adjustments */
+  .login-container {
+    padding: 2rem;
+    margin: 1rem;
+  }
+
+  .login-title {
+    font-size: 1.75rem;
+  }
+
+  .floating-shape {
+    display: none;
+  }
+
+  /* Dashboard responsive adjustments */
+  .modern-header {
+    padding: 1rem;
+  }
+
+  .modern-header h1 {
+    font-size: 2rem;
+    flex-direction: column;
+    text-align: center;
+    gap: 0.5rem;
+  }
+
+  .user-section {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .vehicles-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .section-header {
+    flex-direction: column;
+    gap: 1rem;
+    align-items: stretch;
+  }
+}
+
+/* ========================================
+   PHP ERROR STYLING
+   ======================================== */
+.php-error {
+  font-family: "Inter", monospace;
+  padding: 1rem 1.25rem;
+  border-radius: 8px;
+  margin: 1rem;
+  white-space: pre-wrap;
+  box-shadow: var(--shadow);
+  border-left: 4px solid;
+  position: relative;
+}
+
+.php-error strong {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+/* Close button */
+.php-error-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 1.2rem;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.2s ease;
+}
+
+.php-error-close:hover {
+  opacity: 1;
+}
+
+/* Severities */
+.php-error.fatal {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: var(--danger-color);
+  color: #991b1b;
+}
+.php-error.warning {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: var(--warning-color);
+  color: #92400e;
+}
+.php-error.notice {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: var(--secondary-color);
+  color: #1e40af;
+}
+
+/* Passenger status badge */
+.status-passenger {
+  background: rgba(168, 85, 247, 0.1);
+  color: #6b21a8;
+  border: 2px solid rgba(168, 85, 247, 0.2);
+}
+
+/* Passenger list in vehicle card - subscript style */
+.vehicle-passengers {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  margin-top: 0.25rem;
+  line-height: 1.3;
+  max-height: 2.6rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.vehicle-passengers-label {
+  font-weight: 600;
+  color: var(--text-secondary);
+  display: inline;
+}
+
+.vehicle-passengers-list {
+  display: inline;
+  color: #64748b;
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  .php-error.fatal {
+    background: rgba(239, 68, 68, 0.2);
+    color: var(--danger-color);
+  }
+  .php-error.warning {
+    background: rgba(251, 221, 56, 0.2);
+    color: var(--warning-color);
+  }
+  .php-error.notice {
+    background: rgba(59, 130, 246, 0.2);
+    color: #539efa;
+  }
+}
+
+/* ========================================
+           ACCESSIBILITY & PREFERENCES
+======================================== */
+
+/* Accessibility improvements */
+@media (prefers-reduced-motion: reduce) {
+  .floating-shape,
+  .login-btn::before {
+    animation: none;
+  }
+
+  .login-container:hover,
+  .vehicle-card:hover,
+  .stat-card:hover {
+    transform: none;
+  }
+}
+
+/* Focus visible for better accessibility */
+.login-btn:focus-visible,
+.form-floating input:focus-visible,
+.btn-modern:focus-visible {
+  outline: 2px solid var(--secondary-color);
+  outline-offset: 2px;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-primary: #0f172a;
+    --bg-card: #1e293b;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --border-color: #334155;
+  }
+
+  .login-container {
+    background: rgba(30, 41, 59, 0.95);
+    color: var(--bg-card);
+  }
+
+  .form-floating input {
+    background: var(--bg-card);
+    color: var(--text-primary);
+  }
+
+  .login-title {
+    color: var(--text-primary);
+  }
+  .simple-form-page-container {
+    color: var(--text-primary);
+  }
+  .input-group-icon .form-control:focus {
+    color: var(--text-primary);
+  }
+  input.form-control::placeholder {
+    color: white !important;
+    opacity: 1 !important;
+  }
+}
