@@ -8,7 +8,7 @@ require 'db.php';
 
 // Helper Functions
 function canEmployeeRequest($employeeRequestStatus, $isAssignedVehicle, $isReturningVehicle) {
-    return !in_array($employeeRequestStatus, ['pending_dispatch_assignment', 'pending_admin_approval']) 
+    return !in_array($employeeRequestStatus, ['pending_dispatch_assignment', 'pending_admin_approval', 'rejected_reassign_dispatch']) 
            && !($employeeRequestStatus === 'approved' && $isAssignedVehicle) 
            && !$isReturningVehicle;
 }
@@ -563,10 +563,18 @@ if ($isEmployee) {
                 <!-- Vehicles Tab -->
                 <div class="tab-pane fade show active" id="vehicles">
                     <?php if ($isEmployee): ?>
-                    <?php if ($employeeRequestStatus === 'pending_admin_approval'): ?>
+                    <?php if ($employeeRequestStatus === 'rejected_reassign_dispatch'): ?>
+                    <div class="modern-alert alert-warning">
+                        <i class="fas fa-sync-alt alert-icon"></i>
+                        <div class="alert alert-permanent alert-warning">
+                            <strong>Request Under Reassignment:</strong> Your vehicle request was sent back to dispatch for reassignment.  
+                            You cannot submit a new request until this process is complete.
+                        </div>
+                    </div>
+                    <?php elseif ($employeeRequestStatus === 'pending_admin_approval'): ?>
                     <div class="modern-alert alert-info">
                         <i class="fas fa-info-circle alert-icon"></i>
-                        <div class="text-success">
+                        <div class="alert alert-permanent alert-info">
                             <strong>Request Status:</strong> Your vehicle request has been assigned a vehicle and driver, and is now pending admin approval.
                             You cannot submit another request at this time.
                         </div>
@@ -574,7 +582,7 @@ if ($isEmployee) {
                     <?php elseif ($employeeRequestStatus === 'pending_dispatch_assignment'): ?>
                     <div class="modern-alert alert-info">
                         <i class="fas fa-info-circle alert-icon"></i>
-                        <div class="text-success">
+                        <div class="alert alert-permanent alert-warning">
                             <strong>Request Status:</strong> Your vehicle request is currently awaiting dispatch assignment.
                             You cannot submit another request at this time.
                         </div>
@@ -582,7 +590,7 @@ if ($isEmployee) {
                     <?php elseif ($employeeRequestStatus === 'approved_pending_dispatch'): ?>
                     <div class="modern-alert alert-info">
                         <i class="fas fa-info-circle alert-icon"></i>
-                        <div class="text-success">
+                        <div class="alert alert-permanent alert-info">
                             <strong>Request Status:</strong> Your vehicle request has been approved and is awaiting
                             vehicle dispatch.
                         </div>
@@ -590,7 +598,7 @@ if ($isEmployee) {
                     <?php elseif ($employeeRequestStatus === 'rejected'): ?>
                     <div class="modern-alert alert-danger">
                         <i class="fas fa-times-circle alert-icon"></i>
-                        <div class="text-danger">
+                        <div class="alert alert-permanent alert-danger">
                             <strong>Request Status:</strong> Your last vehicle request was denied. Please submit a new
                             request.
                         </div>
@@ -598,7 +606,7 @@ if ($isEmployee) {
                     <?php elseif ($employeeRequestStatus === 'approved' && $isAssignedVehicle): ?>
                     <div class="modern-alert alert-success">
                         <i class="fas fa-check-circle alert-icon"></i>
-                        <div class="text-success">
+                        <div class="alert alert-permanent alert-secondary">
                             <strong>Request Status:</strong> Your vehicle request has been approved and a vehicle has
                             been assigned!
                         </div>
@@ -606,7 +614,7 @@ if ($isEmployee) {
                     <?php elseif ($isReturningVehicle): ?>
                     <div class="modern-alert alert-warning">
                         <i class="fas fa-clock alert-icon"></i>
-                        <div class="text-warning">
+                        <div class="alert alert-permanent alert-warning">
                             <strong>Return Status:</strong> You have a vehicle return in progress. You cannot submit a new request until the return is completed.
                         </div>
                     </div>
