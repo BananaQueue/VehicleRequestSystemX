@@ -742,7 +742,7 @@ if ($isEmployee) {
             <?php if ($hasPendingRequest && $pendingRequestId): ?>
                 <!-- Show Cancel Request button if request is not yet approved -->
                 <button type="button" class="btn btn-danger btn-modern" 
-                        onclick="confirmCancelRequest(<?= $pendingRequestId ?>)">
+                    onclick="showCancelModal(<?= $pendingRequestId ?>)">
                     <i class="fas fa-times-circle me-1"></i>Cancel Request
                 </button>
             <?php else: ?>
@@ -1355,9 +1355,75 @@ if ($isEmployee) {
             </div>
         </div>
     </div>
+    <!-- Cancel Request Modal -->
+<div class="modal fade text-dark" id="cancelRequestModal" tabindex="-1" aria-labelledby="cancelRequestModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title text-white" id="cancelRequestModalLabel">
+                    <i class="fas fa-times-circle me-2"></i>Cancel Vehicle Request
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="cancelRequestForm" action="employee/cancel_my_request.php" method="POST">
+                <?= csrf_field() ?>
+                <input type="hidden" name="request_id" id="cancelRequestId">
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <strong>Warning:</strong> This action cannot be undone. The vehicle and driver will become available for others.
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="cancel_reason" class="form-label">
+                            <i class="fas fa-comment me-1"></i>Reason for Cancellation <span class="text-danger">*</span>
+                        </label>
+                        <input type="text" 
+                               class="form-control" 
+                               id="cancel_reason" 
+                               name="cancel_reason" 
+                               placeholder="e.g., Schedule changed, No longer needed" 
+                               maxlength="150" 
+                               required>
+                        <div class="form-text">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Please provide a brief reason (max 150 characters)
+                        </div>
+                    </div>
+                    
+                    <div id="charCount" class="text-muted small text-end">
+                        0 / 150 characters
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-arrow-left me-1"></i>Go Back
+                    </button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-times-circle me-1"></i>Confirm Cancellation
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>                                       
+
+    <form id="cancelRequestForm" action="employee/cancel_my_request.php" method="POST" style="display:none;">
+    <input type="hidden" name="request_id" id="cancelRequestId">
+    <?= csrf_field() ?>
+    </form>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        function showCancelModal(requestId) {
+        console.log('Opening cancel modal for request:', requestId);
+        document.getElementById('cancelRequestId').value = requestId;
+        document.getElementById('cancel_reason').value = '';
+        document.getElementById('charCount').textContent = '0 / 150 characters';
+        var cancelModal = new bootstrap.Modal(document.getElementById('cancelRequestModal'));
+        cancelModal.show();
+    }
+
         // Auto-dismiss alerts (but skip permanent ones)
         document.addEventListener('DOMContentLoaded', function () {
             const alerts = document.querySelectorAll('.alert:not(.alert-permanent)');
@@ -1394,6 +1460,16 @@ if ($isEmployee) {
                     window.history.pushState({ path: newUrl.href }, '', newUrl.href);
                 });
             });
+
+             var cancelReasonInput = document.getElementById('cancel_reason');
+            var charCount = document.getElementById('charCount');
+        
+            if (cancelReasonInput) {
+                cancelReasonInput.addEventListener('input', function() {
+                    var length = this.value.length;
+                    charCount.textContent = length + ' / 150 characters';
+                });
+            }
         });
 
         // Function to show login required modal for guests
@@ -1508,6 +1584,13 @@ if (adminActionModal) {
 }
 
         });
+
+    function confirmCancelRequest(requestId) {
+    if (confirm('Are you sure you want to cancel this vehicle request? This action cannot be undone and the vehicle will become available for others.')) {
+        document.getElementById('cancelRequestId').value = requestId;
+        document.getElementById('cancelRequestForm').submit();
+    }
+}
     </script>
 </body>
 
