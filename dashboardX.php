@@ -703,29 +703,55 @@ if ($isEmployee) {
                                 </div>
                             </div>
                             <div class="action-group">
-                                <?php if ($isAdmin): ?>
-                                <a href="admin/edit_vehicle.php?id=<?= $vehicle['id'] ?>"
-                                    class="btn btn-primary-modern btn-modern">
-                                    <i class="fas fa-edit me-1"></i>Edit
-                                </a>
-                                <form action="admin/delete_vehicle.php" method="POST" style="display:inline;">
-                                    <input type="hidden" name="id" value="<?= $vehicle['id'] ?>">
-                                    <?= csrf_field() ?>
-                                    <button type="submit" class="btn btn-danger btn-modern"
-                                            onclick="return confirm('Are you sure you want to delete this vehicle?');">
-                                                <i class="fas fa-trash-alt me-1"></i>Delete
-                                    </button>
-                                </form>
+    <?php if ($isAdmin): ?>
+    <a href="admin/edit_vehicle.php?id=<?= $vehicle['id'] ?>"
+        class="btn btn-primary-modern btn-modern">
+        <i class="fas fa-edit me-1"></i>Edit
+    </a>
+    <form action="admin/delete_vehicle.php" method="POST" style="display:inline;">
+        <input type="hidden" name="id" value="<?= $vehicle['id'] ?>">
+        <?= csrf_field() ?>
+        <button type="submit" class="btn btn-danger btn-modern"
+                onclick="return confirm('Are you sure you want to delete this vehicle?');">
+                    <i class="fas fa-trash-alt me-1"></i>Delete
+        </button>
+    </form>
 
-                                <?php elseif ($isEmployee && $vehicle['status'] === 'assigned' && $vehicle['assigned_to'] === $username): ?>
-                                <a href="return_vehicle.php?id=<?= $vehicle['id'] ?>"
-                                    class="btn btn-warning-modern btn-modern">
-                                    <i class="fas fa-undo me-1"></i>Return Vehicle
-                                </a>
-                                <?php elseif ($isEmployee && $vehicle['status'] === 'returning' && $vehicle['returned_by'] === $username): ?>
-                                <span class="text-muted">
-                                    <i class="fas fa-clock me-1"></i>Pending Return
-                                </span>
+    <?php elseif ($isEmployee): ?>
+        <?php if ($vehicle['status'] === 'assigned' && $vehicle['assigned_to'] === $username): ?>
+            <?php 
+            // Check if there's a pending (not yet approved) request for this vehicle
+            $hasPendingRequest = false;
+            $pendingRequestId = null;
+            foreach ($myRequests as $req) {
+                if (in_array($req['status'], ['pending_dispatch_assignment', 'pending_admin_approval', 'rejected_reassign_dispatch']) 
+                    && $req['assigned_vehicle_id'] == $vehicle['id']) {
+                    $hasPendingRequest = true;
+                    $pendingRequestId = $req['id'];
+                    break;
+                }
+            }
+            ?>
+            
+            <?php if ($hasPendingRequest && $pendingRequestId): ?>
+                <!-- Show Cancel Request button if request is not yet approved -->
+                <button type="button" class="btn btn-danger btn-modern" 
+                        onclick="confirmCancelRequest(<?= $pendingRequestId ?>)">
+                    <i class="fas fa-times-circle me-1"></i>Cancel Request
+                </button>
+            <?php else: ?>
+                <!-- Show Return Vehicle button if request is approved -->
+                <a href="return_vehicle.php?id=<?= $vehicle['id'] ?>"
+                    class="btn btn-warning-modern btn-modern">
+                    <i class="fas fa-undo me-1"></i>Return Vehicle
+                </a>
+            <?php endif; ?>
+            
+        <?php elseif ($vehicle['status'] === 'returning' && $vehicle['returned_by'] === $username): ?>
+            <span class="text-muted">
+                <i class="fas fa-clock me-1"></i>Pending Return
+            </span>
+        <?php endif; ?>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -1081,7 +1107,7 @@ if ($isEmployee) {
                     <div class="modal fade" id="adminActionModal" tabindex="-1" aria-labelledby="adminActionModalLabel" aria-hidden="true">
                         <div class="modal-dialog modal-dialog-centered">
                             <div class="modal-content">
-                                <div class="modal-header bg-primary text-ligh">
+                                <div class="modal-header bg-primary text-light">
                                     <h5 class="modal-title" id="adminActionModalLabel"><i class="fas fa-clipboard-check me-2"></i>Review Vehicle Request</h5>
                                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                                 </div>
