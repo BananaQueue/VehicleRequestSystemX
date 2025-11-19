@@ -540,11 +540,17 @@ if ($isEmployee) {
                     <li class="nav-item">
                         <a class="nav-link" data-bs-toggle="tab" href="#adminRequests">
                             <i class="fas fa-clipboard-list me-2"></i>Requests
+                            <?php if ($pendingRequestsCount > 0): ?>
+                            <span class="badge bg-danger ms-1"><?= $pendingRequestsCount ?></span>
+                            <?php endif; ?>
                         </a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" data-bs-toggle="tab" href="#adminReturns">
                             <i class="fas fa-truck-loading me-2"></i>Returns
+                            <?php if ($pendingReturnsCount > 0): ?>
+                            <span class="badge bg-danger ms-1"><?= $pendingReturnsCount ?></span>
+                            <?php endif; ?>
                         </a>
                     </li>
                     <?php endif; ?>
