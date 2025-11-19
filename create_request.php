@@ -150,14 +150,14 @@ try {
                         <div class="input-group-icon mb-3 col-6 p-3">
                             <div class="input-group-icon mb-3">
                                 <label for="destination" class="form-label">Destination</label>
-                                <input type="text" class="form-control" id="destination" name="destination" value="<?= htmlspecialchars($destination ?? '') ?>" required>
+                                <input type="text" class="form-control text-dark" id="destination" name="destination" value="<?= htmlspecialchars($destination ?? '') ?>" required>
                                 <?php if (isset($errors['destination'])): ?>
                                     <div class="text-danger"><?= htmlspecialchars($errors['destination']) ?></div>
                                 <?php endif; ?>
                             </div>
                             <div class= "input-group-icon">
                                 <label for="purpose" class="form-label">Purpose</label>
-                                <textarea class="form-control" id="purpose" name="purpose" rows="3" required><?= htmlspecialchars($purpose ?? '') ?></textarea>
+                                <textarea class="form-control text-dark" id="purpose" name="purpose" rows="3" required><?= htmlspecialchars($purpose ?? '') ?></textarea>
                                 <?php if (isset($errors['purpose'])): ?>
                                     <div class="text-danger"><?= htmlspecialchars($errors['purpose']) ?></div>
                                 <?php endif; ?>
@@ -169,14 +169,14 @@ try {
                             <div class="row mb-3 p-3">
                                 <div class="col-md-6">
                                     <label for="departure_date" class="form-label">Departure Date</label>
-                                    <input type="date" class="form-control" id="departure_date" name="departure_date" value="<?= htmlspecialchars($departure_date ?? '') ?>" min="<?= date('Y-m-d') ?>" required>
+                                    <input type="date" class="form-control text-dark" id="departure_date" name="departure_date" value="<?= htmlspecialchars($departure_date ?? '') ?>" min="<?= date('Y-m-d') ?>" required>
                                     <?php if (isset($errors['departure_date'])): ?>
                                         <div class="text-danger"><?= htmlspecialchars($errors['departure_date']) ?></div>
                                     <?php endif; ?>
                                 </div>
                                 <div class="col-md-6">
                                     <label for="return_date" class="form-label">Return Date</label>
-                                    <input type="date" class="form-control" id="return_date" name="return_date" value="<?= htmlspecialchars($return_date ?? '') ?>" min="<?= date('Y-m-d') ?>" required>
+                                    <input type="date" class="form-control text-dark" id="return_date" name="return_date" value="<?= htmlspecialchars($return_date ?? '') ?>" min="<?= date('Y-m-d') ?>" required>
                                     <?php if (isset($errors['return_date'])): ?>
                                         <div class="text-danger"><?= htmlspecialchars($errors['return_date']) ?></div>
                                     <?php endif; ?>
@@ -186,7 +186,7 @@ try {
                             <div class="mb-3 p-3">
                                 <label class="form-label">Add Passengers</label>
                                 <div class="input-group mb-2">
-                                    <input type="text" class="form-control" id="passenger_search" placeholder="Search for employees..." autocomplete="off">
+                                    <input type="text" class="form-control text-dark" id="passenger_search" placeholder="Search for employees..." autocomplete="off">
                                     <button class="btn btn-outline-secondary" type="button" id="add_passenger_btn" disabled>
                                         <i class="fas fa-plus"></i> Add
                                     </button>
