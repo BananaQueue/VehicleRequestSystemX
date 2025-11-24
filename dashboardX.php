@@ -1021,140 +1021,214 @@ if ($isEmployee) {
                 </div>
 
                 <!-- Admin Requests Tab -->
-                <div class="tab-pane fade" id="adminRequests">
-                    <div class="table-container mb-4">
-                        <div class="section-header">
-                            <h2 class="section-title text-warning">
-                                <i class="fas fa-clipboard-list"></i>
-                                Vehicle Requests Awaiting Your Approval
-                            </h2>
-                        </div>
-                        <div class="table-responsive">
-                            <table class="table">
-                                <thead>
-                                    <tr>
-                                        <th>Requestor</th>
-                                        <th>Email</th>
-                                        <th>Departure</th>
-                                        <th>Return</th>
-                                        <th>Destination</th>
-                                        <th>Purpose</th>
-                                        <th>Passengers</th>
-                                        <th>Vehicle</th>
-                                        <th>Driver</th>
-                                        <th>Requested On</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php if (empty($pendingAdminApprovalRequests)): ?>
-                                    <tr>
-                                        <td colspan="11" class="text-center">No vehicle requests currently awaiting
-                                            your approval.</td>
-                                    </tr>
-                                    <?php else: ?>
-                                    <?php foreach ($pendingAdminApprovalRequests as $request): ?>
-                                    <tr>
-                                        <td><?= htmlspecialchars($request['requestor_name']) ?></td>
-                                        <td><?= htmlspecialchars($request['requestor_email']) ?></td>
-                                        <td>
-                                            <?php 
-                                            if (!empty($request['departure_date'])) {
-                                                echo htmlspecialchars($request['departure_date']);
-                                            } else {
-                                                echo '----';
-                                            }
-                                            ?>
-                                        </td>
-                                        <td>
-                                            <?php 
-                                            if (!empty($request['return_date'])) {
-                                                echo htmlspecialchars($request['return_date']);
-                                            } else {
-                                                echo '----';
-                                            }
-                                            ?>
-                                        </td>
-                                        <td><?= htmlspecialchars($request['destination']) ?></td>
-                                        <td><?= htmlspecialchars($request['purpose']) ?></td>
-                                        <td>
-                                            <?php 
-                                            if (!empty($request['passenger_names'])) {
-                                                $passengers = json_decode($request['passenger_names'], true);
-                                                if (is_array($passengers)) {
-                                                    echo htmlspecialchars(implode(', ', $passengers));
-                                                } else {
-                                                    echo htmlspecialchars($request['passenger_names']);
-                                                }
-                                            } else {
-                                                echo '----';
-                                            }
-                                            ?>
-                                        </td>
-                                        <td><?= $request['assigned_vehicle_id'] ? htmlspecialchars($vehicleLookup[$request['assigned_vehicle_id']] ?? '----') : '----' ?></td>
-                                        <td><?= $request['assigned_driver_id'] ? htmlspecialchars($driverLookup[$request['assigned_driver_id']] ?? '----') : '----' ?></td>
-                                        <td><?= htmlspecialchars($request['request_date']) ?></td>
-                                        <td>
-                                            <button type="button" class="btn btn-sm btn-primary-modern" data-bs-toggle="modal" data-bs-target="#adminActionModal" 
-                                                    data-request-id="<?= $request['id'] ?>"
-                                                    data-requestor-name="<?= htmlspecialchars($request['requestor_name']) ?>">
-                                                <i class="fas fa-cogs"></i> Take Action
-                                            </button>
-                                        </td>
-                                    </tr>
-                                    <?php endforeach; ?>
-                                    <?php endif; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+<div class="tab-pane fade" id="adminRequests">
+    <div class="table-container mb-4">
+        <div class="section-header">
+            <h2 class="section-title text-warning">
+                <i class="fas fa-clipboard-list"></i>
+                Vehicle Requests Awaiting Your Approval
+            </h2>
+        </div>
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Requestor</th>
+                        <th>Email</th>
+                        <th>Departure</th>
+                        <th>Return</th>
+                        <th>Destination</th>
+                        <th>Purpose</th>
+                        <th>Passengers</th>
+                        <th>Vehicle</th>
+                        <th>Driver</th>
+                        <th>Requested On</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($pendingAdminApprovalRequests)): ?>
+                    <tr>
+                        <td colspan="11" class="text-center">No vehicle requests currently awaiting your approval.</td>
+                    </tr>
+                    <?php else: ?>
+                    <?php foreach ($pendingAdminApprovalRequests as $request): 
+                        // Prepare passenger display
+                        $passengerDisplay = '----';
+                        if (!empty($request['passenger_names'])) {
+                            $passengers = json_decode($request['passenger_names'], true);
+                            if (is_array($passengers)) {
+                                $passengerDisplay = implode(', ', $passengers);
+                            } else {
+                                $passengerDisplay = $request['passenger_names'];
+                            }
+                        }
+                        
+                        // Get vehicle and driver names
+                        $vehicleName = $request['assigned_vehicle_id'] ? ($vehicleLookup[$request['assigned_vehicle_id']] ?? '----') : '----';
+                        $driverName = $request['assigned_driver_id'] ? ($driverLookup[$request['assigned_driver_id']] ?? '----') : '----';
+                    ?>
+                    <tr>
+                        <td><?= htmlspecialchars($request['requestor_name']) ?></td>
+                        <td><?= htmlspecialchars($request['requestor_email']) ?></td>
+                        <td>
+                            <?php 
+                            if (!empty($request['departure_date'])) {
+                                echo htmlspecialchars($request['departure_date']);
+                            } else {
+                                echo '----';
+                            }
+                            ?>
+                        </td>
+                        <td>
+                            <?php 
+                            if (!empty($request['return_date'])) {
+                                echo htmlspecialchars($request['return_date']);
+                            } else {
+                                echo '----';
+                            }
+                            ?>
+                        </td>
+                        <td><?= htmlspecialchars($request['destination']) ?></td>
+                        <td><?= htmlspecialchars($request['purpose']) ?></td>
+                        <td><?= htmlspecialchars($passengerDisplay) ?></td>
+                        <td><?= htmlspecialchars($vehicleName) ?></td>
+                        <td><?= htmlspecialchars($driverName) ?></td>
+                        <td><?= htmlspecialchars($request['request_date']) ?></td>
+                        <td>
+                            <button type="button" 
+                                    class="btn btn-sm btn-primary-modern" 
+                                    data-bs-toggle="modal" 
+                                    data-bs-target="#adminActionModal" 
+                                    data-request-id="<?= $request['id'] ?>"
+                                    data-requestor-name="<?= htmlspecialchars($request['requestor_name']) ?>"
+                                    data-requestor-email="<?= htmlspecialchars($request['requestor_email']) ?>"
+                                    data-departure-date="<?= htmlspecialchars($request['departure_date'] ?? '----') ?>"
+                                    data-return-date="<?= htmlspecialchars($request['return_date'] ?? '----') ?>"
+                                    data-destination="<?= htmlspecialchars($request['destination']) ?>"
+                                    data-purpose="<?= htmlspecialchars($request['purpose']) ?>"
+                                    data-passengers="<?= htmlspecialchars($passengerDisplay) ?>"
+                                    data-assigned-vehicle="<?= htmlspecialchars($vehicleName) ?>"
+                                    data-assigned-driver="<?= htmlspecialchars($driverName) ?>"
+                                    data-request-date="<?= htmlspecialchars($request['request_date']) ?>">
+                                <i class="fas fa-cogs"></i> Take Action
+                            </button>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
 
-                    <!-- Admin Action Modal -->
-                    <div class="modal fade" id="adminActionModal" tabindex="-1" aria-labelledby="adminActionModalLabel" aria-hidden="true">
-                        <div class="modal-dialog modal-dialog-centered">
-                            <div class="modal-content">
-                                <div class="modal-header bg-primary text-light">
-                                    <h5 class="modal-title" id="adminActionModalLabel"><i class="fas fa-clipboard-check me-2"></i>Review Vehicle Request</h5>
-                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+    <!-- Admin Action Modal with Request Details Preview -->
+    <div class="modal fade" id="adminActionModal" tabindex="-1" aria-labelledby="adminActionModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-light">
+                    <h5 class="modal-title" id="adminActionModalLabel">
+                        <i class="fas fa-clipboard-check me-2"></i>Review Vehicle Request
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="adminActionForm" action="process_request.php" method="POST">
+                    <input type="hidden" name="id" id="modalRequestId">
+                    <?= csrf_field() ?>
+                    <div class="modal-body text-dark">
+                        <!-- Request Details Preview -->
+                        <div class="card mb-3 border-primary">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0">
+                                    <i class="fas fa-info-circle me-2"></i>Request Details
+                                </h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="text-muted small">Requestor</label>
+                                        <div class="fw-bold" id="modalRequestorName"></div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="text-muted small">Email</label>
+                                        <div class="fw-bold" id="modalRequestorEmail"></div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="text-muted small">Departure Date</label>
+                                        <div class="fw-bold" id="modalDepartureDate"></div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="text-muted small">Return Date</label>
+                                        <div class="fw-bold" id="modalReturnDate"></div>
+                                    </div>
+                                    <div class="col-md-12 mb-3">
+                                        <label class="text-muted small">Destination</label>
+                                        <div class="fw-bold" id="modalDestination"></div>
+                                    </div>
+                                    <div class="col-md-12 mb-3">
+                                        <label class="text-muted small">Purpose</label>
+                                        <div class="fw-bold" id="modalPurpose"></div>
+                                    </div>
+                                    <div class="col-md-12 mb-3">
+                                        <label class="text-muted small">Passengers</label>
+                                        <div class="fw-bold" id="modalPassengers"></div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="text-muted small">Assigned Vehicle</label>
+                                        <div class="fw-bold text-primary" id="modalAssignedVehicle"></div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="text-muted small">Assigned Driver</label>
+                                        <div class="fw-bold text-primary" id="modalAssignedDriver"></div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="text-muted small">Request Date</label>
+                                        <div class="fw-bold" id="modalRequestDate"></div>
+                                    </div>
                                 </div>
-                                <form id="adminActionForm" action="process_request.php" method="POST">
-                                    <input type="hidden" name="id" id="modalRequestId">
-                                    <?= csrf_field() ?>
-                                    <div class="modal-body text-dark">
-                                        <p>Reviewing request by: <strong id="modalRequestorName"></strong></p>
-                                        
-                                        <div class="mb-3">
-                                            <label for="actionSelect" class="form-label">Select Action:</label>
-                                            <select class="form-select" id="actionSelect" name="action" required>
-                                                <option value="">-- Choose an Action --</option>
-                                                <option value="approve">Approve Request</option>
-                                                <option value="reject">Reject Request</option>
-                                            </select>
-                                        </div>
-                                        
-                                        <div id="rejectionReasonGroup" class="mb-3" style="display: none;">
-                                            <label for="rejectionReason" class="form-label">Reason for Rejection:</label>
-                                            <select class="form-select" id="rejectionReason" name="rejection_reason">
-                                                <option value="">-- Select a Reason --</option>
-                                                <option value="reassign_vehicle">Reassign Vehicle</option>
-                                                <option value="reassign_driver">Reassign Driver</option>
-                                                <option value="new_request">Reject Completely</option>
-                                            </select>
-                                        </div>
-                                        
-                                        <div id="modalAlert" class="alert" style="display: none;"></div>
-                                    </div>
-                                    <div class="modal-footer">
-                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                        <button type="submit" class="btn btn-primary" id="modalSubmitButton">Submit</button>
-                                    </div>
-                                </form>
                             </div>
                         </div>
+
+                        <!-- Action Selection -->
+                        <div class="mb-3">
+                            <label for="actionSelect" class="form-label fw-bold">
+                                <i class="fas fa-tasks me-2"></i>Select Action:
+                            </label>
+                            <select class="form-select" id="actionSelect" name="action" required>
+                                <option value="">-- Choose an Action --</option>
+                                <option value="approve">✓ Approve Request</option>
+                                <option value="reject">✗ Reject Request</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Rejection Reason Group -->
+                        <div id="rejectionReasonGroup" class="mb-3" style="display: none;">
+                            <label for="rejectionReason" class="form-label fw-bold">
+                                <i class="fas fa-exclamation-circle me-2"></i>Reason for Rejection:
+                            </label>
+                            <select class="form-select" id="rejectionReason" name="rejection_reason">
+                                <option value="">-- Select a Reason --</option>
+                                <option value="reassign_vehicle">🚗 Reassign Vehicle</option>
+                                <option value="reassign_driver">👤 Reassign Driver</option>
+                                <option value="new_request">❌ Reject Completely</option>
+                            </select>
+                        </div>
+                        
+                        <div id="modalAlert" class="alert" style="display: none;"></div>
                     </div>
-
-                </div>
-
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                            <i class="fas fa-times me-2"></i>Cancel
+                        </button>
+                        <button type="submit" class="btn btn-primary" id="modalSubmitButton">
+                            <i class="fas fa-check me-2"></i>Submit
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
                 <!-- Admin Returns Tab -->
                 <div class="tab-pane fade" id="adminReturns">
                     <div class="table-container">
@@ -1528,8 +1602,8 @@ if ($isEmployee) {
                 }
             }
 
-            // Admin Action Modal Logic
-            const adminActionModal = document.getElementById('adminActionModal');
+            // Enhanced Admin Action Modal Logic with Request Preview
+const adminActionModal = document.getElementById('adminActionModal');
 if (adminActionModal) {
     const actionSelect = adminActionModal.querySelector('#actionSelect');
     const rejectionReasonGroup = adminActionModal.querySelector('#rejectionReasonGroup');
@@ -1565,18 +1639,38 @@ if (adminActionModal) {
         }
     });
 
-    // This part runs every time the modal opens
+    // This part runs every time the modal opens - now with request details
     adminActionModal.addEventListener('show.bs.modal', function (event) {
         const button = event.relatedTarget;
+        
+        // Get all data attributes
         const requestId = button.getAttribute('data-request-id');
         const requestorName = button.getAttribute('data-requestor-name');
+        const requestorEmail = button.getAttribute('data-requestor-email');
+        const departureDate = button.getAttribute('data-departure-date');
+        const returnDate = button.getAttribute('data-return-date');
+        const destination = button.getAttribute('data-destination');
+        const purpose = button.getAttribute('data-purpose');
+        const passengers = button.getAttribute('data-passengers');
+        const assignedVehicle = button.getAttribute('data-assigned-vehicle');
+        const assignedDriver = button.getAttribute('data-assigned-driver');
+        const requestDate = button.getAttribute('data-request-date');
 
-        const modalRequestId = adminActionModal.querySelector('#modalRequestId');
-        const modalRequestorName = adminActionModal.querySelector('#modalRequestorName');
+        // Populate modal fields
+        document.getElementById('modalRequestId').value = requestId;
+        document.getElementById('modalRequestorName').textContent = requestorName;
+        document.getElementById('modalRequestorEmail').textContent = requestorEmail || '----';
+        document.getElementById('modalDepartureDate').textContent = departureDate || '----';
+        document.getElementById('modalReturnDate').textContent = returnDate || '----';
+        document.getElementById('modalDestination').textContent = destination || '----';
+        document.getElementById('modalPurpose').textContent = purpose || '----';
+        document.getElementById('modalPassengers').textContent = passengers || '----';
+        document.getElementById('modalAssignedVehicle').textContent = assignedVehicle || '----';
+        document.getElementById('modalAssignedDriver').textContent = assignedDriver || '----';
+        document.getElementById('modalRequestDate').textContent = requestDate || '----';
 
-        modalRequestId.value = requestId;
-        modalRequestorName.textContent = requestorName;
-        actionSelect.value = ''; // Reset select
+        // Reset form controls
+        actionSelect.value = '';
         rejectionReasonGroup.style.display = 'none';
         rejectionReasonSelect.removeAttribute('required');
         modalAlert.style.display = 'none';
