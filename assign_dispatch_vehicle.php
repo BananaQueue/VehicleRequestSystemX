@@ -1,7 +1,10 @@
 <?php
 require_once __DIR__ . '/includes/session.php';
+require_once __DIR__ . '/includes/passenger_validation.php';
 require 'db.php';
 
+// Get employees with availability status
+$employees = getEmployeeListWithAvailability($pdo, $request_id);
 
 // Check if user is logged in and is a dispatch user
 if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'dispatch') {

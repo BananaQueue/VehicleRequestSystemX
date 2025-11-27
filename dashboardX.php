@@ -7,10 +7,16 @@ require 'db.php';
 
 
 // Helper Functions
-function canEmployeeRequest($employeeRequestStatus, $isAssignedVehicle, $isReturningVehicle) {
-    return !in_array($employeeRequestStatus, ['pending_dispatch_assignment', 'pending_admin_approval', 'rejected_reassign_dispatch']) 
-           && !($employeeRequestStatus === 'approved' && $isAssignedVehicle) 
-           && !$isReturningVehicle;
+function canEmployeeRequest($employeeRequestStatus, $isAssignedVehicle, $isReturningVehicle, $isPassenger = false) {
+    $hasPendingRequest = in_array($employeeRequestStatus, [
+        'pending_dispatch_assignment', 
+        'pending_admin_approval', 
+        'rejected_reassign_dispatch'
+    ]);
+    
+    $hasApprovedWithVehicle = ($employeeRequestStatus === 'approved' && $isAssignedVehicle);
+    
+    return !$hasPendingRequest && !$hasApprovedWithVehicle && !$isReturningVehicle;
 }
 
 
@@ -49,9 +55,10 @@ function getStatusBadgeClass($status) {
         'pending_dispatch_assignment' => 'status-returning',
         'pending_admin_approval' => 'status-returning',
         'approved' => 'status-available',
+        'concluded' => 'status-available',  // ADDED
         'rejected_new_request' => 'status-assigned',
         'rejected_reassign_dispatch' => 'status-returning',
-        'rejected' => 'status-assigned' // Keep for old rejected requests or for a general rejected status
+        'rejected' => 'status-assigned'
     ];
     
     return $statusMap[$status] ?? '';
@@ -62,6 +69,7 @@ function getStatusText($status) {
         'pending_dispatch_assignment' => 'Awaiting Dispatch',
         'pending_admin_approval' => 'Awaiting Admin Approval',
         'approved' => 'Approved',
+        'concluded' => 'Concluded',  // ADDED
         'rejected_new_request' => 'Rejected (New Request Needed)',
         'rejected_reassign_dispatch' => 'Rejected (Reassign Dispatch)',
         'rejected' => 'Rejected'
@@ -123,10 +131,23 @@ if ($isEmployee) {
     $stmt->execute(['user_id' => $user_id]);
     $myRequests = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // Check if employee is passenger
+    $stmt = $pdo->prepare("
+        SELECT r.id, r.requestor_name, r.status, r.passenger_names, r.departure_date
+        FROM requests r 
+        WHERE r.status IN ('pending_dispatch_assignment', 'pending_admin_approval', 'approved')
+        AND r.departure_date >= CURDATE()  -- ADDED: Only future/current trips
+        AND JSON_SEARCH(r.passenger_names, 'one', :username) IS NOT NULL
+    ");
+    $stmt->execute(['username' => $username]);
+    $passengerInRequests = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    $isPassengerInActiveRequest = !empty($passengerInRequests);
+    $passengerRequestDetails = $passengerInRequests[0] ?? null;  
     if (!empty($myRequests)) {
         $employeeRequestStatus = $myRequests[0]['status'];
     }
-}
+} 
 
 // Admin-specific data
 if ($isAdmin) {
@@ -195,12 +216,30 @@ if ($isAdmin) {
         $stmt = $pdo->prepare("SELECT status FROM requests WHERE user_id = ? ORDER BY request_date DESC LIMIT 1");
         $stmt->execute([$empId]);
         $latestRequest = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        // Check if employee is a passenger in any active request
+        $stmt = $pdo->prepare("
+            SELECT r.requestor_name, r.status 
+            FROM requests r 
+            WHERE r.status IN ('pending_dispatch_assignment', 'pending_admin_approval', 'approved')
+            AND r.departure_date >= CURDATE()  -- ADDED: Only future/current trips
+            AND JSON_SEARCH(r.passenger_names, 'one', :name) IS NOT NULL
+            LIMIT 1
+        ");
+        $stmt->execute(['name' => $empName]);
+        $isPassengerIn = $stmt->fetch(PDO::FETCH_ASSOC);
         
         // Determine status priority (highest priority first)
         $status = 'No Activity';
         $statusClass = 'status-available';
+
+        // Add to status priority checks (before checking latestRequest):
+        if ($isPassengerIn) {
+            $status = 'Passenger in ' . $isPassengerIn['requestor_name'] . "'s Request";
+            $statusClass = 'status-assigned';
+        }   
         
-        if ($latestRequest && $latestRequest['status'] === 'pending_admin_approval') {
+        elseif ($latestRequest && $latestRequest['status'] === 'pending_admin_approval') {
             $status = 'Awaiting Admin Approval';
             $statusClass = 'status-returning';
         } elseif ($assignedVehicle) {
@@ -512,9 +551,20 @@ if ($isEmployee) {
             <?php endif; ?>
 
             <!--Alert Section-->
+            <?php if ($isEmployee && $isPassengerInActiveRequest): ?>
+            <div class="modern-alert">
+                <i class="fas fa-users alert-icon"></i>
+                <div class="alert alert-permanent alert-info">
+                    <strong>Passenger Status:</strong> You are currently listed as a passenger in 
+                    <strong><?= htmlspecialchars($passengerRequestDetails['requestor_name']) ?></strong>'s vehicle request.
+                    If you want to submit your own vehicle request, please coordinate your travel plans.
+                </div>
+            </div>
+            <?php endif; ?>
+
             <?php if ($isEmployee): ?>
                     <?php if ($employeeRequestStatus === 'rejected_reassign_dispatch'): ?>
-                    <div class="modern-alert alert-warning">
+                    <div class="modern-alert">
                         <i class="fas fa-sync-alt alert-icon"></i>
                         <div class="alert alert-permanent alert-warning">
                             <strong>Request Under Reassignment:</strong> Your vehicle request was sent back to dispatch for reassignment.  
@@ -522,15 +572,15 @@ if ($isEmployee) {
                         </div>
                     </div>
                     <?php elseif ($employeeRequestStatus === 'rejected_new_request'): ?>
-<div class="modern-alert alert-danger">
-    <i class="fas fa-times-circle alert-icon"></i>
-    <div class="alert alert-permanent alert-danger">
-        <strong>Request Rejected:</strong> Your vehicle request has been rejected. Please submit a new request.
-    </div>
-</div>
+                    <div class="modern-alert">
+                        <i class="fas fa-times-circle alert-icon"></i>
+                        <div class="alert alert-permanent alert-danger">
+                            <strong>Request Rejected:</strong> Your vehicle request has been rejected. Please submit a new request.
+                        </div>
+                    </div>
 
                     <?php elseif ($employeeRequestStatus === 'pending_admin_approval'): ?>
-                    <div class="modern-alert alert-info">
+                    <div class="modern-alert">
                         <i class="fas fa-info-circle alert-icon"></i>
                         <div class="alert alert-permanent alert-info">
                             <strong>Request Status:</strong> Your vehicle request has been assigned a vehicle and driver, and is now pending admin approval.
@@ -538,7 +588,7 @@ if ($isEmployee) {
                         </div>
                     </div>
                     <?php elseif ($employeeRequestStatus === 'pending_dispatch_assignment'): ?>
-                    <div class="modern-alert alert-info">
+                    <div class="modern-alert">
                         <i class="fas fa-info-circle alert-icon"></i>
                         <div class="alert alert-permanent alert-warning">
                             <strong>Request Status:</strong> Your vehicle request is currently awaiting dispatch assignment.
@@ -546,7 +596,7 @@ if ($isEmployee) {
                         </div>
                     </div>
                     <?php elseif ($employeeRequestStatus === 'approved_pending_dispatch'): ?>
-                    <div class="modern-alert alert-info">
+                    <div class="modern-alert">
                         <i class="fas fa-info-circle alert-icon"></i>
                         <div class="alert alert-permanent alert-info">
                             <strong>Request Status:</strong> Your vehicle request has been approved and is awaiting
@@ -554,7 +604,7 @@ if ($isEmployee) {
                         </div>
                     </div>
                     <?php elseif ($employeeRequestStatus === 'rejected'): ?>
-                    <div class="modern-alert alert-danger">
+                    <div class="modern-alert">
                         <i class="fas fa-times-circle alert-icon"></i>
                         <div class="alert alert-permanent alert-danger">
                             <strong>Request Status:</strong> Your last vehicle request was denied. Please submit a new
@@ -562,13 +612,13 @@ if ($isEmployee) {
                         </div>
                     </div>
                     <?php elseif ($employeeRequestStatus === 'approved' && $isAssignedVehicle): ?>
-                    <div class="modern-alert alert-success">
+                    <div class="modern-alert">
                         <i class="fas fa-check-circle alert-icon"></i>
-                        <div class="alert alert-permanent alert-secondary">
+                        <div class="alert alert-permanent alert-success">
                             <strong>Request Status:</strong> Your vehicle request has been approved and a vehicle has
                             been assigned!
                         </div>
-                    </div>
+                    </div class="modern-alert">
                     <?php elseif ($isReturningVehicle): ?>
                     <div class="modern-alert alert-warning">
                         <i class="fas fa-clock alert-icon"></i>
@@ -650,10 +700,18 @@ if ($isEmployee) {
                                 <i class="fas fa-plus me-2"></i>Add Vehicle
                             </a>
                             <?php elseif ($isEmployee): ?>
-                            <a href="create_request.php"
-                                class="btn btn-success-modern btn-modern <?= $cannotRequest ? 'disabled' : '' ?>">
-                                <i class="fas fa-plus me-2"></i>Request Vehicle
-                            </a>
+                                <?php if ($isPassengerInActiveRequest && !$cannotRequest): ?>
+                                <button type="button" 
+                                        class="btn btn-success-modern btn-modern" 
+                                        onclick="showPassengerWarningModal()">
+                                    <i class="fas fa-plus me-2"></i>Request Vehicle
+                                </button>
+                                <?php else: ?>
+                                    <a href="create_request.php"
+                                        class="btn btn-success-modern btn-modern <?= $cannotRequest ? 'disabled' : '' ?>">
+                                        <i class="fas fa-plus me-2"></i>Request Vehicle
+                                    </a>
+                                <?php endif; ?>
                             <?php elseif (!$isLoggedIn): ?>
                             <button class="btn btn-success-modern btn-modern" onclick="requireLogin()">
                                 <i class="fas fa-plus me-2"></i>Request Vehicle
@@ -720,19 +778,19 @@ if ($isEmployee) {
                                 </div>
                             </div>
                             <div class="action-group">
-    <?php if ($isAdmin): ?>
-    <a href="admin/edit_vehicle.php?id=<?= $vehicle['id'] ?>"
-        class="btn btn-primary-modern btn-modern">
-        <i class="fas fa-edit me-1"></i>Edit
-    </a>
-    <form action="admin/delete_vehicle.php" method="POST" style="display:inline;">
-        <input type="hidden" name="id" value="<?= $vehicle['id'] ?>">
-        <?= csrf_field() ?>
-        <button type="submit" class="btn btn-danger btn-modern"
-                onclick="return confirm('Are you sure you want to delete this vehicle?');">
-                    <i class="fas fa-trash-alt me-1"></i>Delete
-        </button>
-    </form>
+                            <?php if ($isAdmin): ?>
+                            <a href="admin/edit_vehicle.php?id=<?= $vehicle['id'] ?>"
+                                class="btn btn-primary-modern btn-modern">
+                                <i class="fas fa-edit me-1"></i>Edit
+                            </a>
+                            <form action="admin/delete_vehicle.php" method="POST" style="display:inline;">
+                                <input type="hidden" name="id" value="<?= $vehicle['id'] ?>">
+                                <?= csrf_field() ?>
+                                <button type="submit" class="btn btn-danger btn-modern"
+                                        onclick="return confirm('Are you sure you want to delete this vehicle?');">
+                                            <i class="fas fa-trash-alt me-1"></i>Delete
+                                </button>
+                            </form>
 
     <?php elseif ($isEmployee): ?>
         <?php if ($vehicle['status'] === 'assigned' && $vehicle['assigned_to'] === $username): ?>
@@ -1440,6 +1498,33 @@ if ($isEmployee) {
             </div>
         </div>
     </div>
+<!-- Passenger Warning Modal -->
+    <div class="modal fade text-dark" id="passengerWarningModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title">
+                    <i class="fas fa-exclamation-triangle me-2"></i>Passenger Status Warning
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>You are currently listed as a passenger in:</p>
+                <div class="card border-primary mb-3">
+                    <div class="card-body">
+                        <p><strong>Requestor:</strong> <?= htmlspecialchars($passengerRequestDetails['requestor_name'] ?? 'N/A') ?></p>
+                        <p><strong>Status:</strong> <?= getStatusText($passengerRequestDetails['status'] ?? '') ?></p>
+                    </div>
+                </div>
+                <p><strong>Do you want to proceed with creating a new request?</strong></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <a href="create_request.php" class="btn btn-primary">Yes, Continue</a>
+            </div>
+        </div>
+    </div>
+</div>
     <!-- Cancel Request Modal -->
 <div class="modal fade text-dark" id="cancelRequestModal" tabindex="-1" aria-labelledby="cancelRequestModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -1508,6 +1593,10 @@ if ($isEmployee) {
         var cancelModal = new bootstrap.Modal(document.getElementById('cancelRequestModal'));
         cancelModal.show();
     }
+    function showPassengerWarningModal() {
+    const modal = new bootstrap.Modal(document.getElementById('passengerWarningModal'));
+    modal.show();
+}
 
         // Auto-dismiss alerts (but skip permanent ones)
         document.addEventListener('DOMContentLoaded', function () {

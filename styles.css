@@ -804,13 +804,9 @@ body.login-page {
 
 /* Alert Improvements */
 .modern-alert {
-  border: none;
-  border-radius: 12px;
-  padding: 1rem 1.5rem;
-  margin-bottom: 1rem;
   display: flex;
-  align-items: center;
-  gap: 1rem;
+  padding: 0;
+  margin: 0;
 }
 
 @keyframes shimmer {
