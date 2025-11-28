@@ -1,5 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/session.php';
+require_once __DIR__ . '/../includes/schedule_utils.php';
+require_once __DIR__ . '/../includes/audit_log.php';
 require_once __DIR__ . '/../db.php';
 
 // Check if user is an employee
@@ -35,7 +37,6 @@ if (strlen($cancelReason) > 150) {
 
 $requestId = (int)$_POST['request_id'];
 $userId = $_SESSION['user']['id'];
-$userName = $_SESSION['user']['name'];
 
 try {
     $pdo->beginTransaction();
@@ -49,36 +50,35 @@ try {
         throw new Exception('Request not found or you do not have permission to cancel this request.');
     }
 
-    // Check if request can be cancelled (not approved)
-    if ($request['status'] === 'approved') {
-        throw new Exception('Cannot cancel an approved request. Please use the return vehicle option instead.');
-    }
+    [$requestStartDate, $requestEndDate] = get_request_date_range($request);
+    $today = date('Y-m-d');
 
-    // Verify the request is in a cancellable state
-    $cancellableStatuses = ['pending_dispatch_assignment', 'pending_admin_approval', 'rejected_reassign_dispatch'];
+    $cancellableStatuses = ['pending_dispatch_assignment', 'pending_admin_approval', 'rejected_reassign_dispatch', 'approved'];
     if (!in_array($request['status'], $cancellableStatuses)) {
         throw new Exception('This request cannot be cancelled at its current stage.');
     }
 
-    // If there's an assigned vehicle/driver, free them up
-    if ($request['assigned_vehicle_id']) {
-        $stmt = $pdo->prepare("UPDATE vehicles SET status = 'available', assigned_to = NULL, driver_name = NULL WHERE id = ?");
-        $stmt->execute([$request['assigned_vehicle_id']]);
+    if ($request['status'] === 'approved' && $requestStartDate && $today >= $requestStartDate) {
+        throw new Exception('This trip already started and can no longer be cancelled online.');
     }
 
-    if ($request['assigned_driver_id']) {
-        $stmt = $pdo->prepare("UPDATE drivers SET status = 'available' WHERE id = ?");
-        $stmt->execute([$request['assigned_driver_id']]);
-    }
+    $updateStmt = $pdo->prepare("
+        UPDATE requests
+        SET status = 'cancelled',
+            rejection_reason = NULL,
+            assigned_vehicle_id = NULL,
+            assigned_driver_id = NULL
+        WHERE id = :id
+    ");
+    $updateStmt->execute([':id' => $requestId]);
 
-    // Log the cancellation reason before deleting (optional - for audit trail)
-    error_log("Request #{$requestId} cancelled by {$userName} (ID: {$userId}). Reason: {$cancelReason}");
-
-    // Delete the request
-    $stmt = $pdo->prepare("DELETE FROM requests WHERE id = ?");
-    $stmt->execute([$requestId]);
+    log_request_audit($pdo, $requestId, 'employee_cancelled', [
+        'notes' => $cancelReason
+    ]);
 
     $pdo->commit();
+
+    sync_active_assignments($pdo);
 
     $_SESSION['success'] = "Your vehicle request has been cancelled successfully. You can now submit a new request if needed.";
     header('Location: ../dashboardX.php');

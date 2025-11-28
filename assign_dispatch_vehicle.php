@@ -1,10 +1,9 @@
 <?php
 require_once __DIR__ . '/includes/session.php';
 require_once __DIR__ . '/includes/passenger_validation.php';
+require_once __DIR__ . '/includes/schedule_utils.php';
+require_once __DIR__ . '/includes/audit_log.php';
 require 'db.php';
-
-// Get employees with availability status
-$employees = getEmployeeListWithAvailability($pdo, $request_id);
 
 // Check if user is logged in and is a dispatch user
 if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'dispatch') {
@@ -23,7 +22,11 @@ if ($request_id === false) {
     exit();
 }
 
+sync_active_assignments($pdo);
+
 $request = null;
+$requestStartDate = null;
+$requestEndDate = null;
 try {
     // Fetch request details
     $stmt = $pdo->prepare("SELECT * FROM requests WHERE id = :id AND (status = 'pending_dispatch_assignment' OR status = 'rejected_reassign_dispatch')");
@@ -36,14 +39,56 @@ try {
         exit();
     }
 
+    [$requestStartDate, $requestEndDate] = get_request_date_range($request);
+
+    if (!$requestStartDate) {
+        $_SESSION['error'] = "Request is missing departure date information. Please update the request before assigning a vehicle.";
+        header("Location: dispatch_dashboard.php");
+        exit();
+    }
+
     // Fetch available vehicles
-    $stmt = $pdo->prepare("SELECT * FROM vehicles WHERE status = 'available'");
-    $stmt->execute();
+    $stmt = $pdo->prepare("
+        SELECT *
+        FROM vehicles v
+        WHERE v.status = 'available'
+          AND NOT EXISTS (
+              SELECT 1 FROM requests r
+              WHERE r.assigned_vehicle_id = v.id
+                AND r.status IN ('pending_admin_approval', 'approved')
+                AND :start_date <= COALESCE(r.return_date, r.departure_date, DATE(r.request_date))
+                AND :end_date >= COALESCE(r.departure_date, DATE(r.request_date))
+                AND r.id != :current_request_id
+          )
+        ORDER BY v.plate_number ASC
+    ");
+    $stmt->execute([
+        ':start_date' => $requestStartDate,
+        ':end_date' => $requestEndDate,
+        ':current_request_id' => $request_id,
+    ]);
     $availableVehicles = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     // Fetch available drivers (only those with 'available' status)
-    $stmt = $pdo->prepare("SELECT * FROM drivers WHERE status = 'available' ORDER BY name ASC");
-    $stmt->execute();
+    $stmt = $pdo->prepare("
+        SELECT *
+        FROM drivers d
+        WHERE d.status = 'available'
+          AND NOT EXISTS (
+              SELECT 1 FROM requests r
+              WHERE r.assigned_driver_id = d.id
+                AND r.status IN ('pending_admin_approval', 'approved')
+                AND :start_date <= COALESCE(r.return_date, r.departure_date, DATE(r.request_date))
+                AND :end_date >= COALESCE(r.departure_date, DATE(r.request_date))
+                AND r.id != :current_request_id
+          )
+        ORDER BY d.name ASC
+    ");
+    $stmt->execute([
+        ':start_date' => $requestStartDate,
+        ':end_date' => $requestEndDate,
+        ':current_request_id' => $request_id,
+    ]);
     $availableDrivers = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
@@ -65,37 +110,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['assign_vehicle'])) {
         $errors[] = "Please select a valid driver.";
     }
 
+    if (!$requestStartDate || !$requestEndDate) {
+        $errors[] = "Request dates are not properly set. Please update the request.";
+    }
+
     if (empty($errors)) {
         try {
             $pdo->beginTransaction();
 
             // Fetch driver name and verify availability
-            $stmt = $pdo->prepare("SELECT name FROM drivers WHERE id = :id AND status = 'available'");
+            $stmt = $pdo->prepare("SELECT name FROM drivers WHERE id = :id");
             $stmt->execute([':id' => $selected_driver_id]);
             $driver_name = $stmt->fetchColumn();
 
             if (!$driver_name) {
-                throw new Exception("Selected driver not found or no longer available.");
+                throw new Exception("Selected driver not found.");
             }
 
-            // Update vehicle status and assigned_to/driver_name
-            $updateVehicleStmt = $pdo->prepare("UPDATE vehicles SET status = 'assigned', assigned_to = :assigned_to, driver_name = :driver_name WHERE id = :id AND status = 'available'");
-            $vehicle_updated = $updateVehicleStmt->execute([
-                ':assigned_to' => $request['requestor_name'],
-                ':driver_name' => $driver_name,
-                ':id' => $selected_vehicle_id
-            ]);
-
-            if (!$vehicle_updated || $updateVehicleStmt->rowCount() === 0) {
-                throw new Exception("Failed to assign vehicle or vehicle no longer available.");
+            // Confirm vehicle availability for requested dates
+            if (has_vehicle_conflict($pdo, $selected_vehicle_id, $requestStartDate, $requestEndDate, $request_id)) {
+                throw new Exception("Selected vehicle already has a reservation within the requested dates.");
             }
 
-            // Update driver status to 'assigned'
-            $updateDriverStmt = $pdo->prepare("UPDATE drivers SET status = 'assigned' WHERE id = :id AND status = 'available'");
-            $driver_updated = $updateDriverStmt->execute([':id' => $selected_driver_id]);
-
-            if (!$driver_updated || $updateDriverStmt->rowCount() === 0) {
-                throw new Exception("Failed to assign driver or driver no longer available.");
+            if (has_driver_conflict($pdo, $selected_driver_id, $requestStartDate, $requestEndDate, $request_id)) {
+                throw new Exception("Selected driver already has a reservation within the requested dates.");
             }
 
             // Update request status, assigned_vehicle_id, and assigned_driver_id
@@ -110,7 +148,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['assign_vehicle'])) {
                 throw new Exception("Failed to update request status.");
             }
 
+            log_request_audit($pdo, $request_id, 'dispatch_assigned', [
+                'notes' => sprintf(
+                    "Vehicle #%s assigned with driver %s for %s to %s",
+                    $selected_vehicle_id,
+                    $driver_name,
+                    $requestStartDate,
+                    $requestEndDate
+                )
+            ]);
+
             $pdo->commit();
+
+            sync_active_assignments($pdo);
+
             $_SESSION['success'] = "Vehicle assigned successfully to " . htmlspecialchars($request['requestor_name']) . " with driver " . htmlspecialchars($driver_name) . "." . " Forwarding to admin for approval.";
             header("Location: dispatch_dashboard.php");
             exit();

@@ -576,6 +576,205 @@ body.login-page {
   color: var(--primary-color);
 }
 
+.dashboard-grid {
+  margin-top: 2rem;
+}
+
+.upcoming-sidebar {
+  position: sticky;
+  top: 6rem;
+}
+
+@media (max-width: 991px) {
+  .upcoming-sidebar {
+    position: static;
+  }
+}
+
+.upcoming-card {
+  background: var(--bg-card);
+  border-radius: 16px;
+  padding: 1.25rem;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+}
+
+.upcoming-header {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.upcoming-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.upcoming-item {
+  display: flex;
+  gap: 1rem;
+  padding: 0.75rem;
+  border-radius: 12px;
+  border: 1px dashed var(--border-color);
+  background: #f8fafc;
+  align-items: center;
+}
+
+.upcoming-date {
+  min-width: 64px;
+  border-radius: 12px;
+  background: white;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.upcoming-date .month {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.upcoming-date .day {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--primary-color);
+  line-height: 1.1;
+}
+
+.upcoming-details {
+  flex: 1;
+}
+
+.vehicle-label {
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.upcoming-range {
+  font-weight: 600;
+}
+
+.upcoming-meta {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.calendar-container .fc {
+  font-family: "Inter", sans-serif;
+}
+
+.calendar-container .fc .fc-toolbar-title {
+  font-size: 1.35rem;
+  color: var(--primary-color);
+}
+
+.calendar-container .fc .fc-button {
+  background: var(--primary-color);
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.calendar-container .fc .fc-button:disabled {
+  opacity: 0.6;
+}
+
+.calendar-container .calendar-event {
+  border: none;
+  border-radius: 12px;
+  padding: 0.35rem 0.55rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.calendar-container .calendar-event--active {
+  background: rgba(34, 197, 94, 0.2);
+  color: #166534;
+  border-left: 4px solid var(--success-color);
+}
+
+.calendar-container .calendar-event--upcoming {
+  background: rgba(99, 102, 241, 0.18);
+  color: #1e3a8a;
+  border-left: 4px solid var(--secondary-color);
+}
+
+.calendar-container .calendar-event--past {
+  background: rgba(148, 163, 184, 0.25);
+  color: #475569;
+  border-left: 4px solid #94a3b8;
+}
+
+.calendar-legend {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.legend-active {
+  background: var(--success-color);
+}
+
+.legend-upcoming {
+  background: var(--secondary-color);
+}
+
+.legend-complete {
+  background: #94a3b8;
+}
+
+.audit-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.audit-entry {
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  background: #f8fafc;
+}
+
+.audit-entry__title {
+  font-weight: 700;
+  color: var(--primary-color);
+  margin-bottom: 0.35rem;
+}
+
+.audit-entry__meta {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.audit-entry__notes {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
 /* Enhanced Vehicle Cards */
 .vehicles-grid {
   display: grid;
@@ -805,8 +1004,8 @@ body.login-page {
 /* Alert Improvements */
 .modern-alert {
   display: flex;
-  padding: 0;
-  margin: 0;
+  padding: 1.25rem 1.5rem;
+  
 }
 
 @keyframes shimmer {

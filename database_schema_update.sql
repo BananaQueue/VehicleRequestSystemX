@@ -22,7 +22,7 @@ DROP TABLE IF EXISTS `vehicle_requests`;
 -- 2. UPDATE REQUESTS TABLE STATUS ENUM
 -- =====================================================
 -- Current enum: ('pending','approved','rejected','approved_pending_dispatch')
--- Required enum: ('pending_dispatch_assignment','pending_admin_approval','approved','rejected_new_request','rejected_reassign_dispatch','rejected')
+-- Required enum: ('pending_dispatch_assignment','pending_admin_approval','approved','rejected_new_request','rejected_reassign_dispatch','rejected','cancelled')
 
 ALTER TABLE `requests` 
 MODIFY COLUMN `status` ENUM(
@@ -31,7 +31,8 @@ MODIFY COLUMN `status` ENUM(
     'approved',
     'rejected_new_request',
     'rejected_reassign_dispatch',
-    'rejected'
+    'rejected',
+    'cancelled'
 ) DEFAULT 'pending_dispatch_assignment';
 
 -- =====================================================
@@ -85,7 +86,27 @@ ADD COLUMN IF NOT EXISTS `passenger_names` TEXT NULL;
 CREATE INDEX IF NOT EXISTS `idx_request_status` ON `requests` (`status`);
 
 -- =====================================================
--- 6. UPDATE EXISTING DATA (if needed)
+-- 6. CREATE REQUEST AUDIT LOG TABLE
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS `request_audit_logs` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `request_id` INT NOT NULL,
+    `action` VARCHAR(100) NOT NULL,
+    `actor_id` INT NULL,
+    `actor_role` VARCHAR(50) NULL,
+    `actor_name` VARCHAR(255) NULL,
+    `notes` TEXT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT `fk_request_audit_request`
+        FOREIGN KEY (`request_id`) REFERENCES `requests`(`id`)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS `idx_request_audit_request_id` ON `request_audit_logs` (`request_id`);
+
+-- =====================================================
+-- 7. UPDATE EXISTING DATA (if needed)
 -- =====================================================
 -- Update any existing records with old status values to new ones
 -- This handles data migration from old enum values to new ones
@@ -99,7 +120,7 @@ SET `status` = 'approved'
 WHERE `status` = 'approved_pending_dispatch';
 
 -- =====================================================
--- 7. VERIFY CHANGES
+-- 8. VERIFY CHANGES
 -- =====================================================
 -- Display table structures to verify changes
 
@@ -107,13 +128,13 @@ SHOW CREATE TABLE `requests`;
 SHOW CREATE TABLE `vehicles`;
 
 -- =====================================================
--- COMMIT TRANSACTION
+-- 9. COMMIT TRANSACTION
 -- =====================================================
 -- If everything looks good, commit the changes
 COMMIT;
 
 -- =====================================================
--- VERIFICATION QUERIES
+-- 10. VERIFICATION QUERIES
 -- =====================================================
 -- Run these queries to verify the schema updates worked correctly
 
@@ -138,6 +159,6 @@ FROM `vehicles`
 ORDER BY id;
 
 -- =====================================================
--- SUCCESS MESSAGE
+-- 11. SUCCESS MESSAGE
 -- =====================================================
 SELECT 'Database schema update completed successfully!' as message;

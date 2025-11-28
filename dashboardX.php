@@ -1,13 +1,15 @@
 <?php
 // session_name("site3_session"); // Handled in session.php
 require_once __DIR__ . '/includes/session.php';
+require_once __DIR__ . '/includes/schedule_utils.php';
 include 'error.php';
 require 'db.php';
 
+sync_active_assignments($pdo);
 
 
 // Helper Functions
-function canEmployeeRequest($employeeRequestStatus, $isAssignedVehicle, $isReturningVehicle, $isPassenger = false) {
+function canEmployeeRequest($employeeRequestStatus, $isAssignedVehicle) {
     $hasPendingRequest = in_array($employeeRequestStatus, [
         'pending_dispatch_assignment', 
         'pending_admin_approval', 
@@ -16,7 +18,7 @@ function canEmployeeRequest($employeeRequestStatus, $isAssignedVehicle, $isRetur
     
     $hasApprovedWithVehicle = ($employeeRequestStatus === 'approved' && $isAssignedVehicle);
     
-    return !$hasPendingRequest && !$hasApprovedWithVehicle && !$isReturningVehicle;
+    return !$hasPendingRequest && !$hasApprovedWithVehicle;
 }
 
 
@@ -105,11 +107,8 @@ $myRequests = [];
 $employeeRequestStatus = null;
 $isAssignedVehicle = false;
 $assignedVehicle = null;
-$isReturningVehicle = false;
-$returningVehicle = null;
 $pendingRequests = [];
 $approvedPendingDispatchRequests = [];
-$pendingReturns = [];
 $dispatchPendingRequests = [];
 $pendingAdminApprovalRequests = []; // New variable for admin pending approval
 
@@ -120,16 +119,15 @@ if ($isEmployee) {
     $stmt->execute(['username' => $username]);
     $assignedVehicle = $stmt->fetch(PDO::FETCH_ASSOC);
     $isAssignedVehicle = (bool)$assignedVehicle;
-    
-    $stmt = $pdo->prepare("SELECT * FROM vehicles WHERE returned_by = :username AND status = 'returning' LIMIT 1");
-    $stmt->execute(['username' => $username]);
-    $returningVehicle = $stmt->fetch(PDO::FETCH_ASSOC);
-    $isReturningVehicle = (bool)$returningVehicle;
 
     // Fetch employee requests
     $stmt = $pdo->prepare("SELECT * FROM requests WHERE user_id = :user_id ORDER BY request_date DESC");
     $stmt->execute(['user_id' => $user_id]);
     $myRequests = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (!empty($myRequests)) {
+        $employeeRequestStatus = $myRequests[0]['status'];
+    }
 
     // Check if employee is passenger
     $stmt = $pdo->prepare("
@@ -143,9 +141,15 @@ if ($isEmployee) {
     $passengerInRequests = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
     $isPassengerInActiveRequest = !empty($passengerInRequests);
-    $passengerRequestDetails = $passengerInRequests[0] ?? null;  
-    if (!empty($myRequests)) {
-        $employeeRequestStatus = $myRequests[0]['status'];
+    $passengerRequestDetails = null;  
+    // Only set details if user is passenger but NOT the requestor
+    if ($isPassengerInActiveRequest) {
+    foreach ($passengerInRequests as $request) {
+        if ($request['requestor_name'] !== $username) {
+            $passengerRequestDetails = $request;
+            break;
+        }
+    }
     }
 } 
 
@@ -191,10 +195,6 @@ if ($isAdmin) {
     $stmt = $pdo->query("SELECT * FROM requests WHERE status IN ('pending_dispatch_assignment', 'rejected_reassign_dispatch') ORDER BY request_date ASC");
     $dispatchForwardedRequests = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Fetch pending returns
-    $stmt = $pdo->query("SELECT * FROM vehicles WHERE status = 'returning' ORDER BY return_date ASC");
-    $pendingReturns = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
     // Get employee status information
     $employeeStatusData = [];
     
@@ -206,11 +206,6 @@ if ($isAdmin) {
         $stmt = $pdo->prepare("SELECT plate_number FROM vehicles WHERE assigned_to = ? AND status = 'assigned' LIMIT 1");
         $stmt->execute([$empName]);
         $assignedVehicle = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        // Check for returning vehicle
-        $stmt = $pdo->prepare("SELECT plate_number FROM vehicles WHERE returned_by = ? AND status = 'returning' LIMIT 1");
-        $stmt->execute([$empName]);
-        $returningVehicle = $stmt->fetch(PDO::FETCH_ASSOC);
         
         // Get latest request status
         $stmt = $pdo->prepare("SELECT status FROM requests WHERE user_id = ? ORDER BY request_date DESC LIMIT 1");
@@ -245,9 +240,6 @@ if ($isAdmin) {
         } elseif ($assignedVehicle) {
             $status = 'Assigned: ' . $assignedVehicle['plate_number'];
             $statusClass = 'status-assigned';
-        } elseif ($returningVehicle) {
-            $status = 'Returning: ' . $returningVehicle['plate_number'];
-            $statusClass = 'status-returning';
         } elseif ($latestRequest) {
             switch ($latestRequest['status']) {
                 case 'pending_dispatch_assignment':
@@ -385,28 +377,142 @@ foreach ($vehicles as $vehicle) {
 
 // Calculate pending counts based on user role
 $pendingRequestsCount = 0;
-$pendingReturnsCount = 0;
-
 if ($isAdmin) {
-    $pendingRequestsCount = count($pendingAdminApprovalRequests); // Only count requests pending admin approval
-    $pendingReturnsCount = count($pendingReturns);
+    $pendingRequestsCount = count($pendingAdminApprovalRequests);
 } elseif ($isEmployee) {
     $pendingRequestsCount = count(array_filter($myRequests, function($req) {
         return in_array($req['status'], ['pending_dispatch_assignment', 'pending_admin_approval', 'rejected_reassign_dispatch']);
     }));
-    $pendingReturnsCount = count(array_filter($vehicles, function($vehicle) use ($username) {
-        return $vehicle['status'] === 'returning' && $vehicle['returned_by'] === $username;
-    }));
 } elseif ($isDispatch) {
     $pendingRequestsCount = count($dispatchPendingRequests);
-    $pendingReturnsCount = 0; 
 }
 
 // Calculate request restrictions for employees
 $cannotRequest = false;
 if ($isEmployee) {
-    $cannotRequest = !canEmployeeRequest($employeeRequestStatus, $isAssignedVehicle, $isReturningVehicle);
+    $cannotRequest = !canEmployeeRequest($employeeRequestStatus, $isAssignedVehicle);
 }
+
+// Calendar + Upcoming reservations data
+$calendarRequests = [];
+$calendarEvents = [];
+$calendarRequestDetails = [];
+$today = date('Y-m-d');
+$upcomingReservations = [];
+$auditLogsByRequest = [];
+
+$calendarStmt = $pdo->prepare("
+    SELECT 
+        r.*,
+        v.plate_number,
+        v.make,
+        v.model,
+        d.name AS driver_name
+    FROM requests r
+    LEFT JOIN vehicles v ON v.id = r.assigned_vehicle_id
+    LEFT JOIN drivers d ON d.id = r.assigned_driver_id
+    WHERE r.status = 'approved'
+      AND r.assigned_vehicle_id IS NOT NULL
+      AND COALESCE(r.departure_date, DATE(r.request_date)) IS NOT NULL
+");
+$calendarStmt->execute();
+$calendarRequests = $calendarStmt->fetchAll(PDO::FETCH_ASSOC);
+
+$calendarRequestIds = array_column($calendarRequests, 'id');
+$pendingAdminIds = array_column($pendingAdminApprovalRequests, 'id');
+$auditRequestIds = array_values(array_unique(array_filter(array_merge($calendarRequestIds, $pendingAdminIds))));
+
+if (!empty($auditRequestIds)) {
+    $placeholders = implode(',', array_fill(0, count($auditRequestIds), '?'));
+    $auditStmt = $pdo->prepare("
+        SELECT request_id, action, actor_name, actor_role, notes, created_at
+        FROM request_audit_logs
+        WHERE request_id IN ($placeholders)
+        ORDER BY created_at DESC
+    ");
+    $auditStmt->execute($auditRequestIds);
+    while ($log = $auditStmt->fetch(PDO::FETCH_ASSOC)) {
+        if (!isset($auditLogsByRequest[$log['request_id']])) {
+            $auditLogsByRequest[$log['request_id']] = [];
+        }
+        if (count($auditLogsByRequest[$log['request_id']]) < 5) {
+            $auditLogsByRequest[$log['request_id']][] = $log;
+        }
+    }
+}
+
+foreach ($calendarRequests as $calendarRequest) {
+    [$eventStart, $eventEnd] = get_request_date_range($calendarRequest);
+    if (!$eventStart) {
+        continue;
+    }
+
+    $eventEnd = $eventEnd ?? $eventStart;
+    if ($eventEnd < $eventStart) {
+        $eventEnd = $eventStart;
+    }
+
+    $eventState = 'upcoming';
+    if ($eventEnd < $today) {
+        $eventState = 'past';
+    } elseif ($eventStart <= $today && $eventEnd >= $today) {
+        $eventState = 'active';
+    }
+
+    $passengerDisplay = '----';
+    if (!empty($calendarRequest['passenger_names'])) {
+        $decodedPassengers = json_decode($calendarRequest['passenger_names'], true);
+        if (is_array($decodedPassengers)) {
+            $passengerDisplay = implode(', ', $decodedPassengers);
+        } else {
+            $passengerDisplay = $calendarRequest['passenger_names'];
+        }
+    }
+
+    $calendarEvents[] = [
+        'id' => $calendarRequest['id'],
+        'title' => $calendarRequest['plate_number'] ?? 'Vehicle',
+        'start' => $eventStart,
+        'end' => date('Y-m-d', strtotime($eventEnd . ' +1 day')),
+        'allDay' => true,
+        'className' => ['calendar-event', 'calendar-event--' . $eventState],
+        'state' => $eventState,
+    ];
+
+    $calendarRequestDetails[$calendarRequest['id']] = [
+        'plate' => $calendarRequest['plate_number'] ?? 'TBD',
+        'vehicle' => trim(($calendarRequest['make'] ?? '') . ' ' . ($calendarRequest['model'] ?? '')),
+        'requestor' => $calendarRequest['requestor_name'],
+        'email' => $calendarRequest['requestor_email'],
+        'destination' => $calendarRequest['destination'],
+        'purpose' => $calendarRequest['purpose'],
+        'start' => $eventStart,
+        'end' => $eventEnd,
+        'status' => getStatusText($calendarRequest['status']),
+        'driver' => $calendarRequest['driver_name'] ?? 'TBD',
+        'passengers' => $passengerDisplay,
+        'audit' => $auditLogsByRequest[$calendarRequest['id']] ?? []
+    ];
+}
+
+$upcomingStmt = $pdo->prepare("
+    SELECT 
+        r.id,
+        r.requestor_name,
+        r.destination,
+        r.departure_date,
+        r.return_date,
+        v.plate_number
+    FROM requests r
+    LEFT JOIN vehicles v ON v.id = r.assigned_vehicle_id
+    WHERE r.status = 'approved'
+      AND r.assigned_vehicle_id IS NOT NULL
+      AND COALESCE(r.return_date, r.departure_date) >= CURDATE()
+    ORDER BY COALESCE(r.departure_date, DATE(r.request_date)) ASC
+    LIMIT 7
+");
+$upcomingStmt->execute();
+$upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
 
 ?>
 
@@ -421,6 +527,7 @@ if ($isEmployee) {
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/main.min.css">
     <link rel="stylesheet" href="styles.css">
 </head>
 
@@ -463,7 +570,7 @@ if ($isEmployee) {
 
         <div class="container-fluid px-4">
             <?php if (isset($_SESSION['success'])): ?>
-            <div class="modern-alert alert-success alert-dismissible fade show text-success" role="alert">
+            <div class="alert alert-success alert-dismissible fade show text-success" role="alert">
                 <i class="fas fa-check-circle alert-icon"></i>
                 <?= htmlspecialchars($_SESSION['success']); ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
@@ -520,11 +627,11 @@ if ($isEmployee) {
                 <div class="stat-card">
                     <div class="stat-header">
                         <div class="stat-icon text-info">
-                            <i class="fas fa-undo"></i>
+                            <i class="fas fa-calendar-check"></i>
                         </div>
                     </div>
-                    <div class="stat-number"><?= $pendingReturnsCount ?></div>
-                    <div class="stat-label">Pending Returns</div>
+                    <div class="stat-number"><?= count($upcomingReservations) ?></div>
+                    <div class="stat-label">Upcoming Reservations</div>
                 </div>
                 <?php else: ?>
                 <div class="stat-card">
@@ -551,12 +658,12 @@ if ($isEmployee) {
             <?php endif; ?>
 
             <!--Alert Section-->
-            <?php if ($isEmployee && $isPassengerInActiveRequest): ?>
+            <?php if ($isEmployee && $passengerRequestDetails !== null): ?>
             <div class="modern-alert">
                 <i class="fas fa-users alert-icon"></i>
                 <div class="alert alert-permanent alert-info">
                     <strong>Passenger Status:</strong> You are currently listed as a passenger in 
-                    <strong><?= htmlspecialchars($passengerRequestDetails['requestor_name']) ?></strong>'s vehicle request.
+                    <strong><?= htmlspecialchars($passengerRequestDetails['requestor_name'])?></strong>'s vehicle request.
                     If you want to submit your own vehicle request, please coordinate your travel plans.
                 </div>
             </div>
@@ -618,22 +725,78 @@ if ($isEmployee) {
                             <strong>Request Status:</strong> Your vehicle request has been approved and a vehicle has
                             been assigned!
                         </div>
-                    </div class="modern-alert">
-                    <?php elseif ($isReturningVehicle): ?>
-                    <div class="modern-alert alert-warning">
-                        <i class="fas fa-clock alert-icon"></i>
-                        <div class="alert alert-permanent alert-warning">
-                            <strong>Return Status:</strong> You have a vehicle return in progress. You cannot submit a new request until the return is completed.
-                        </div>
                     </div>
                     <?php endif; ?>
                     <?php endif; ?>
 
+            <div class="row g-4 dashboard-grid align-items-start">
+                <div class="col-lg-3">
+                    <?php $upcomingCount = count($upcomingReservations); ?>
+                    <aside class="upcoming-sidebar">
+                        <div class="card upcoming-card">
+                            <div class="upcoming-header d-flex align-items-center justify-content-between">
+                                <h3 class="h6 mb-0 text-uppercase">
+                                    <i class="fas fa-calendar-day me-2"></i>Upcoming Reservations
+                                </h3>
+                                <span class="badge bg-light text-dark fw-semibold">
+                                    <?= $upcomingCount ?>
+                                </span>
+                            </div>
+                            <p class="text-muted small mb-3">Next scheduled trips</p>
+                            <?php if (empty($upcomingReservations)): ?>
+                                <p class="text-muted small mb-0">No scheduled trips yet.</p>
+                            <?php else: ?>
+                                <div class="upcoming-list">
+                                    <?php foreach ($upcomingReservations as $reservation): ?>
+                                        <?php
+                                            $startDateValue = $reservation['departure_date'] ?? null;
+                                            $endDateValue = $reservation['return_date'] ?? $startDateValue;
+                                            $startDateObj = $startDateValue ? new DateTime($startDateValue) : null;
+                                            $endDateObj = ($endDateValue && $endDateValue !== $startDateValue) ? new DateTime($endDateValue) : null;
+                                            $rangeLabel = $startDateObj ? $startDateObj->format('M j') : 'Date TBD';
+                                            if ($startDateObj && $endDateObj) {
+                                                $sameMonth = $startDateObj->format('M') === $endDateObj->format('M');
+                                                $rangeLabel .= ' - ' . ($sameMonth ? $endDateObj->format('j') : $endDateObj->format('M j'));
+                                            }
+                                            $plateLabel = $reservation['plate_number'] ?? 'Vehicle TBD';
+                                        ?>
+                                        <div class="upcoming-item">
+                                            <div class="upcoming-date text-center">
+                                                <?php if ($startDateObj): ?>
+                                                    <span class="month"><?= strtoupper($startDateObj->format('M')) ?></span>
+                                                    <span class="day"><?= $startDateObj->format('d') ?></span>
+                                                <?php else: ?>
+                                                    <span class="month">TBD</span>
+                                                <?php endif; ?>
+                                            </div>
+                                            <div class="upcoming-details">
+                                                <div class="vehicle-label"><?= htmlspecialchars($plateLabel) ?></div>
+                                                <div class="upcoming-range text-muted small"><?= htmlspecialchars($rangeLabel) ?></div>
+                                                <div class="upcoming-meta">
+                                                    <i class="fas fa-user me-1"></i><?= htmlspecialchars($reservation['requestor_name']) ?>
+                                                </div>
+                                                <div class="upcoming-meta">
+                                                    <i class="fas fa-location-dot me-1"></i><?= htmlspecialchars($reservation['destination']) ?>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </aside>
+                </div>
+                <div class="col-lg-9">
             <!-- Navigation Tabs -->
             <div class="nav-container">
                 <ul class="nav nav-tabs" id="dashboardTabs">
                     <li class="nav-item">
-                        <a class="nav-link active" data-bs-toggle="tab" href="#vehicles">
+                        <a class="nav-link active" data-bs-toggle="tab" href="#calendar">
+                            <i class="fas fa-calendar-week me-2"></i>Calendar
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-bs-toggle="tab" href="#vehicles">
                             <i class="fas fa-car me-2"></i>Vehicles
                         </a>
                     </li>
@@ -663,14 +826,6 @@ if ($isEmployee) {
                             <?php endif; ?>
                         </a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link" data-bs-toggle="tab" href="#adminReturns">
-                            <i class="fas fa-truck-loading me-2"></i>Returns
-                            <?php if ($pendingReturnsCount > 0): ?>
-                            <span class="badge bg-danger ms-1"><?= $pendingReturnsCount ?></span>
-                            <?php endif; ?>
-                        </a>
-                    </li>
                     <?php endif; ?>
                     <?php if ($isDispatch): ?>
                     <li class="nav-item">
@@ -684,8 +839,26 @@ if ($isEmployee) {
 
             <!-- Tab Content -->
             <div class="tab-content">
+                <!-- Calendar Tab -->
+                <div class="tab-pane fade show active" id="calendar">
+                    <div class="calendar-container card p-3 mb-4">
+                        <div class="section-header mb-3">
+                            <h2 class="section-title mb-0">
+                                <i class="fas fa-calendar-alt me-2"></i>Vehicle Schedule
+                            </h2>
+                            <p class="text-muted mb-0">Select a day to see which vehicles are scheduled. Admins can click an event for more details.</p>
+                        </div>
+                        <div id="fleetCalendar"></div>
+                    </div>
+                    <div class="calendar-legend card p-3">
+                        <div class="legend-item"><span class="legend-dot legend-active"></span> In Use Today</div>
+                        <div class="legend-item"><span class="legend-dot legend-upcoming"></span> Scheduled (Future)</div>
+                        <div class="legend-item"><span class="legend-dot legend-complete"></span> Past</div>
+                    </div>
+                </div>
+
                 <!-- Vehicles Tab -->
-                <div class="tab-pane fade show active" id="vehicles">
+                <div class="tab-pane fade" id="vehicles">
                     
 
                     <!-- Action Bar -->
@@ -815,11 +988,9 @@ if ($isEmployee) {
                     <i class="fas fa-times-circle me-1"></i>Cancel Request
                 </button>
             <?php else: ?>
-                <!-- Show Return Vehicle button if request is approved -->
-                <a href="return_vehicle.php?id=<?= $vehicle['id'] ?>"
-                    class="btn btn-warning-modern btn-modern">
-                    <i class="fas fa-undo me-1"></i>Return Vehicle
-                </a>
+                <span class="text-success fw-semibold">
+                    <i class="fas fa-calendar-check me-1"></i>Reserved for your trip
+                </span>
             <?php endif; ?>
             
         <?php elseif ($vehicle['status'] === 'returning' && $vehicle['returned_by'] === $username): ?>
@@ -1136,6 +1307,10 @@ if ($isEmployee) {
                         // Get vehicle and driver names
                         $vehicleName = $request['assigned_vehicle_id'] ? ($vehicleLookup[$request['assigned_vehicle_id']] ?? '----') : '----';
                         $driverName = $request['assigned_driver_id'] ? ($driverLookup[$request['assigned_driver_id']] ?? '----') : '----';
+                        $latestAudit = $auditLogsByRequest[$request['id']][0] ?? null;
+                        $latestAuditLabel = ($latestAudit && !empty($latestAudit['created_at']))
+                            ? date('M j, Y g:i A', strtotime($latestAudit['created_at']))
+                            : null;
                     ?>
                     <tr>
                         <td><?= htmlspecialchars($request['requestor_name']) ?></td>
@@ -1163,7 +1338,17 @@ if ($isEmployee) {
                         <td><?= htmlspecialchars($passengerDisplay) ?></td>
                         <td><?= htmlspecialchars($vehicleName) ?></td>
                         <td><?= htmlspecialchars($driverName) ?></td>
-                        <td><?= htmlspecialchars($request['request_date']) ?></td>
+                        <td>
+                            <?= htmlspecialchars($request['request_date']) ?>
+                            <?php if ($latestAudit): ?>
+                                <div class="text-muted small mt-1">
+                                    <i class="fas fa-history me-1"></i><?= htmlspecialchars(ucwords(str_replace('_', ' ', $latestAudit['action']))) ?>
+                                    <?php if ($latestAuditLabel): ?>
+                                        <div><?= htmlspecialchars($latestAuditLabel) ?></div>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
+                        </td>
                         <td>
                             <button type="button" 
                                     class="btn btn-sm btn-primary-modern" 
@@ -1295,53 +1480,11 @@ if ($isEmployee) {
                     </div>
                 </form>
             </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
-                <!-- Admin Returns Tab -->
-                <div class="tab-pane fade" id="adminReturns">
-                    <div class="table-container">
-                        <div class="section-header">
-                            <h2 class="section-title text-danger">
-                                <i class="fas fa-truck-loading"></i>
-                                Pending Vehicle Returns
-                            </h2>
-                        </div>
-                        <div class="table-responsive">
-                            <table class="table">
-                                <thead>
-                                    <tr>
-                                        <th>Vehicle Plate</th>
-                                        <th>Returned By</th>
-                                        <th>Return Date</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php if (empty($pendingReturns)): ?>
-                                    <tr>
-                                        <td colspan="4" class="text-center">No pending vehicle returns.</td>
-                                    </tr>
-                                    <?php else: ?>
-                                    <?php foreach ($pendingReturns as $return): ?>
-                                    <tr>
-                                        <td><?= htmlspecialchars($return['plate_number']) ?></td>
-                                        <td><?= htmlspecialchars($return['returned_by']) ?></td>
-                                        <td><?= htmlspecialchars($return['return_date']) ?></td>
-                                        <td>
-                                            <a href="process_return.php?id=<?= $return['id'] ?>"
-                                                class="btn btn-sm btn-primary-modern">
-                                                <i class="fas fa-check-double"></i> Process Return
-                                            </a>
-                                        </td>
-                                    </tr>
-                                    <?php endforeach; ?>
-                                    <?php endif; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
                 <?php endif; ?>
 
                 <?php if ($isDispatch): ?>
@@ -1434,6 +1577,73 @@ if ($isEmployee) {
             </div>
         </div>
     </div>
+
+    <?php if ($isAdmin): ?>
+    <div class="modal fade text-dark" id="calendarEventModal" tabindex="-1" aria-labelledby="calendarEventModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title" id="calendarEventModalLabel">
+                        <i class="fas fa-car-side me-2"></i>Reservation Details
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <p class="text-muted small mb-1">Vehicle</p>
+                            <div class="fw-bold" id="calendarModalVehicle">--</div>
+                        </div>
+                        <div class="col-md-6">
+                            <p class="text-muted small mb-1">Plate Number</p>
+                            <div class="fw-bold" id="calendarModalPlate">--</div>
+                        </div>
+                        <div class="col-md-6">
+                            <p class="text-muted small mb-1">Requestor</p>
+                            <div class="fw-bold" id="calendarModalRequestor">--</div>
+                        </div>
+                        <div class="col-md-6">
+                            <p class="text-muted small mb-1">Email</p>
+                            <div id="calendarModalEmail">--</div>
+                        </div>
+                        <div class="col-md-6">
+                            <p class="text-muted small mb-1">Destination</p>
+                            <div id="calendarModalDestination">--</div>
+                        </div>
+                        <div class="col-md-6">
+                            <p class="text-muted small mb-1">Driver</p>
+                            <div id="calendarModalDriver">--</div>
+                        </div>
+                        <div class="col-md-6">
+                            <p class="text-muted small mb-1">Travel Window</p>
+                            <div id="calendarModalDates">--</div>
+                        </div>
+                        <div class="col-md-6">
+                            <p class="text-muted small mb-1">Status</p>
+                            <div id="calendarModalStatus">--</div>
+                        </div>
+                        <div class="col-12">
+                            <p class="text-muted small mb-1">Purpose</p>
+                            <div id="calendarModalPurpose">--</div>
+                        </div>
+                        <div class="col-12">
+                            <p class="text-muted small mb-1">Passengers</p>
+                            <div id="calendarModalPassengers">--</div>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <h6 class="text-muted text-uppercase small mb-2">
+                            <i class="fas fa-history me-2"></i>Audit Trail
+                        </h6>
+                        <div id="calendarAuditTimeline" class="audit-timeline">
+                            <p class="text-muted small mb-0">No audit activity recorded.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <!-- Login Required Modal -->
     <div class="modal fade text-dark" id="loginRequiredModal" tabindex="-1" aria-labelledby="loginRequiredModalLabel" aria-hidden="true">
@@ -1578,13 +1788,13 @@ if ($isEmployee) {
     </div>
 </div>                                       
 
-    <form id="cancelRequestForm" action="employee/cancel_my_request.php" method="POST" style="display:none;">
-    <input type="hidden" name="request_id" id="cancelRequestId">
-    <?= csrf_field() ?>
-    </form>
-
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
     <script>
+        const calendarEventsData = <?= json_encode(array_values($calendarEvents), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
+        const calendarRequestDetails = <?= json_encode($calendarRequestDetails, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_FORCE_OBJECT); ?>;
+        const isAdminUser = <?= $isAdmin ? 'true' : 'false'; ?>;
+
         function showCancelModal(requestId) {
         console.log('Opening cancel modal for request:', requestId);
         document.getElementById('cancelRequestId').value = requestId;
@@ -1617,8 +1827,8 @@ if ($isEmployee) {
                     new bootstrap.Tab(tabElement).show();
                 }
             } else {
-                // Default to 'vehicles' tab if no hash
-                const defaultTab = document.querySelector('#dashboardTabs a[href="#vehicles"]');
+                // Default to 'calendar' tab if no hash
+                const defaultTab = document.querySelector('#dashboardTabs a[href="#calendar"]');
                 if (defaultTab) {
                     new bootstrap.Tab(defaultTab).show();
                 }
@@ -1679,6 +1889,42 @@ if ($isEmployee) {
         });
 
         document.addEventListener("DOMContentLoaded", function () {
+            const calendarElement = document.getElementById('fleetCalendar');
+            const calendarModalEl = document.getElementById('calendarEventModal');
+            const calendarModalInstance = calendarModalEl ? new bootstrap.Modal(calendarModalEl) : null;
+
+            if (calendarElement && window.FullCalendar) {
+                const calendar = new FullCalendar.Calendar(calendarElement, {
+                    initialView: 'dayGridMonth',
+                    height: 'auto',
+                    headerToolbar: {
+                        left: 'prev,next today',
+                        center: 'title',
+                        right: ''
+                    },
+                    events: calendarEventsData,
+                    eventDisplay: 'block',
+                    eventClick(info) {
+                        if (!isAdminUser || !calendarModalInstance) {
+                            return;
+                        }
+                        const details = calendarRequestDetails[String(info.event.id)];
+                        if (!details) {
+                            return;
+                        }
+                        populateCalendarModal(details);
+                        calendarModalInstance.show();
+                    },
+                    eventDidMount(info) {
+                        const details = calendarRequestDetails[String(info.event.id)];
+                        if (details) {
+                            info.el.setAttribute('title', `${details.requestor} • ${details.destination || 'Destination TBD'}`);
+                        }
+                    }
+                });
+                calendar.render();
+            }
+
             // Handle clicks on tabs
             document.querySelectorAll('a[data-bs-toggle="tab"]').forEach(tabEl => {
                 tabEl.addEventListener("shown.bs.tab", function (event) {
@@ -1785,6 +2031,132 @@ if (adminActionModal) {
         document.getElementById('cancelRequestForm').submit();
     }
 }
+
+        function setModalText(id, value) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.textContent = value || '----';
+            }
+        }
+
+        function formatDateLabel(dateStr) {
+            if (!dateStr) {
+                return 'Date TBD';
+            }
+            const date = new Date(`${dateStr}T00:00:00`);
+            if (Number.isNaN(date.getTime())) {
+                return 'Date TBD';
+            }
+            return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function formatRange(start, end) {
+            if (!start) {
+                return 'Date TBD';
+            }
+            if (!end || end === start) {
+                return formatDateLabel(start);
+            }
+            return `${formatDateLabel(start)} - ${formatDateLabel(end)}`;
+        }
+
+        function formatTimestamp(dateTimeStr) {
+            if (!dateTimeStr) {
+                return '';
+            }
+            const date = new Date(dateTimeStr.replace(' ', 'T'));
+            if (Number.isNaN(date.getTime())) {
+                return dateTimeStr;
+            }
+            return date.toLocaleString(undefined, {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit'
+            });
+        }
+
+        function formatActionLabel(action) {
+            if (!action) {
+                return 'Update';
+            }
+            return action
+                .toLowerCase()
+                .split('_')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ');
+        }
+
+        function populateCalendarModal(details) {
+            if (!details) {
+                return;
+            }
+            setModalText('calendarModalVehicle', details.vehicle || details.plate || 'Vehicle TBD');
+            setModalText('calendarModalPlate', details.plate || 'Plate TBD');
+            setModalText('calendarModalRequestor', details.requestor || '----');
+            setModalText('calendarModalEmail', details.email || '----');
+            setModalText('calendarModalDestination', details.destination || 'Destination TBD');
+            setModalText('calendarModalDriver', details.driver || 'Pending Assignment');
+            setModalText('calendarModalDates', formatRange(details.start, details.end));
+            setModalText('calendarModalStatus', details.status || 'Approved');
+            setModalText('calendarModalPurpose', details.purpose || '----');
+            setModalText('calendarModalPassengers', details.passengers || '----');
+
+            const auditContainer = document.getElementById('calendarAuditTimeline');
+            if (!auditContainer) {
+                return;
+            }
+
+            auditContainer.innerHTML = '';
+            if (Array.isArray(details.audit) && details.audit.length) {
+                details.audit.slice(0, 5).forEach(entry => {
+                    const auditEntry = document.createElement('div');
+                    auditEntry.className = 'audit-entry';
+
+                    const title = document.createElement('div');
+                    title.className = 'audit-entry__title';
+                    title.textContent = formatActionLabel(entry.action);
+                    auditEntry.appendChild(title);
+
+                    const meta = document.createElement('div');
+                    meta.className = 'audit-entry__meta';
+
+                    const actorSpan = document.createElement('span');
+                    const actorIcon = document.createElement('i');
+                    actorIcon.className = 'fas fa-user me-1';
+                    actorSpan.appendChild(actorIcon);
+                    actorSpan.appendChild(document.createTextNode(entry.actor_name || 'System'));
+                    meta.appendChild(actorSpan);
+
+                    const timestampLabel = formatTimestamp(entry.created_at);
+                    if (timestampLabel) {
+                        const timeSpan = document.createElement('span');
+                        const timeIcon = document.createElement('i');
+                        timeIcon.className = 'fas fa-clock me-1';
+                        timeSpan.appendChild(timeIcon);
+                        timeSpan.appendChild(document.createTextNode(timestampLabel));
+                        meta.appendChild(timeSpan);
+                    }
+
+                    auditEntry.appendChild(meta);
+
+                    if (entry.notes) {
+                        const notes = document.createElement('div');
+                        notes.className = 'audit-entry__notes';
+                        notes.textContent = entry.notes;
+                        auditEntry.appendChild(notes);
+                    }
+
+                    auditContainer.appendChild(auditEntry);
+                });
+            } else {
+                const emptyState = document.createElement('p');
+                emptyState.className = 'text-muted small mb-0';
+                emptyState.textContent = 'No audit activity recorded.';
+                auditContainer.appendChild(emptyState);
+            }
+        }
     </script>
 </body>
 
