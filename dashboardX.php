@@ -57,7 +57,8 @@ function getStatusBadgeClass($status) {
         'pending_dispatch_assignment' => 'status-returning',
         'pending_admin_approval' => 'status-returning',
         'approved' => 'status-available',
-        'concluded' => 'status-available',  // ADDED
+        'concluded' => 'status-available', 
+        'cancelled' => 'status-assigned',
         'rejected_new_request' => 'status-assigned',
         'rejected_reassign_dispatch' => 'status-returning',
         'rejected' => 'status-assigned'
@@ -71,7 +72,8 @@ function getStatusText($status) {
         'pending_dispatch_assignment' => 'Awaiting Dispatch',
         'pending_admin_approval' => 'Awaiting Admin Approval',
         'approved' => 'Approved',
-        'concluded' => 'Concluded',  // ADDED
+        'concluded' => 'Concluded',
+        'cancelled' => 'Cancelled',
         'rejected_new_request' => 'Rejected (New Request Needed)',
         'rejected_reassign_dispatch' => 'Rejected (Reassign Dispatch)',
         'rejected' => 'Rejected'
@@ -365,15 +367,17 @@ while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
 
 // Calculate stats
 $availableVehiclesCount = 0;
-$assignedVehiclesCount = 0;
+$maintenanceVehiclesCount = 0;
 
 foreach ($vehicles as $vehicle) {
     if ($vehicle['status'] === 'available') {
         $availableVehiclesCount++;
-    } elseif ($vehicle['status'] === 'assigned') {
-        $assignedVehiclesCount++;
+    }
+     elseif ($vehicle['status'] === 'maintenance') {
+        $maintenanceVehiclesCount++;
     }
 }
+
 
 // Calculate pending counts based on user role
 $pendingRequestsCount = 0;
@@ -606,11 +610,11 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                 <div class="stat-card">
                     <div class="stat-header">
                         <div class="stat-icon text-danger">
-                            <i class="fas fa-car"></i>
+                            <i class="fas fa-tools"></i>
                         </div>
                     </div>
-                    <div class="stat-number"><?= $assignedVehiclesCount ?></div>
-                    <div class="stat-label">Assigned Vehicles</div>
+                    <div class="stat-number"><?= $maintenanceVehiclesCount ?></div>
+                    <div class="stat-label">Vehicles in Maintenance</div>
                 </div>
 
                 <?php if ($isAdmin || $isDispatch): ?>
@@ -641,7 +645,7 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                         </div>
                     </div>
                     <div class="stat-number"><?= count($vehicles) ?></div>
-                    <div class="stat-label">Total Fleet</div>
+                    <div class="stat-label">Total Drivers</div>
                 </div>
 
                 <div class="stat-card">
@@ -846,14 +850,11 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                             <h2 class="section-title mb-0">
                                 <i class="fas fa-calendar-alt me-2"></i>Vehicle Schedule
                             </h2>
-                            <p class="text-muted mb-0">Select a day to see which vehicles are scheduled. Admins can click an event for more details.</p>
-                        </div>
-                        <div id="fleetCalendar"></div>
-                    </div>
-                    <div class="calendar-legend card p-3">
                         <div class="legend-item"><span class="legend-dot legend-active"></span> In Use Today</div>
                         <div class="legend-item"><span class="legend-dot legend-upcoming"></span> Scheduled (Future)</div>
                         <div class="legend-item"><span class="legend-dot legend-complete"></span> Past</div>
+                        </div>
+                        <div id="fleetCalendar"></div>
                     </div>
                 </div>
 
@@ -903,7 +904,7 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                             </div>
                             <div class="vehicle-details">
                                 <div class="detail-item">
-                                    <span class="detail-label">Status</span>
+                                    <span class="detail-label"> Current Status</span>
                                     <span class="status-badge status-<?= htmlspecialchars($vehicle['status']) ?>">
                                         <?php if ($vehicle['status'] === 'available'): ?>
                                         <i class="fas fa-check-circle"></i>Available
@@ -1030,9 +1031,10 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                                         <th>Destination</th>
                                         <th>Purpose</th>
                                         <th>Passengers</th>
-                                        <th>Status</th>
+                                        <th>Current Status</th>
                                         <th>Vehicle</th>
                                         <th>Driver</th>
+                                        <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -1041,7 +1043,23 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                                         <td colspan="9" class="text-center">No vehicle requests found.</td>
                                     </tr>
                                     <?php else: ?>
-                                    <?php foreach ($myRequests as $request): ?>
+                                    <?php foreach ($myRequests as $request): 
+                                    // Determine if request can be cancelled
+                                    $canCancel = in_array($request['status'], [
+                                        'pending_dispatch_assignment', 
+                                        'pending_admin_approval', 
+                                        'rejected_reassign_dispatch'
+                                    ]);
+        
+                                    // For approved requests, check if trip hasn't started yet
+                                    if ($request['status'] === 'approved') {
+                                        $departureDate = $request['departure_date'] ?? null;
+                                        $today = date('Y-m-d');
+                                        if ($departureDate && $today < $departureDate) {
+                                            $canCancel = true;
+                                        }
+                                    }
+                                        ?>
                                     <tr>
                                         <td><?= htmlspecialchars($request['request_date']) ?></td>
                                         <td>
@@ -1101,6 +1119,27 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                                             }
                                             ?>
                                         </td>
+                                        <td>
+            <?php if ($canCancel): ?>
+                <button type="button" 
+                        class="btn btn-sm btn-danger" 
+                        onclick="showCancelModal(<?= $request['id'] ?>)">
+                    <i class="fas fa-times-circle me-1"></i>Cancel
+                </button>
+            <?php elseif ($request['status'] === 'cancelled'): ?>
+                <span class="text-muted">
+                    <i class="fas fa-ban me-1"></i>Cancelled
+                </span>
+            <?php elseif ($request['status'] === 'concluded'): ?>
+                <span class="text-success">
+                    <i class="fas fa-check-circle me-1"></i>Completed
+                </span>
+            <?php else: ?>
+                <span class="text-muted">
+                    <i class="fas fa-info-circle me-1"></i>No Actions
+                </span>
+            <?php endif; ?>
+        </td>
                                     </tr>
                                     <?php endforeach; ?>
                                     <?php endif; ?>
@@ -1132,7 +1171,7 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                                         <th>Email</th>
                                         <th>Role</th>
                                         <th>Position</th>
-                                        <th>Status</th>
+                                        <th>Current Status</th>
                                         <th>Actions</th>
                                     </tr>
                                 </thead>
@@ -1197,7 +1236,7 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                                         <th>Email</th>
                                         <th>Position</th>
                                         <th>Phone</th>
-                                        <th>Status</th>
+                                        <th> Current Status</th>
                                         <th>Actions</th>
                                     </tr>
                                 </thead>
@@ -1274,7 +1313,6 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                 <thead>
                     <tr>
                         <th>Requestor</th>
-                        <th>Email</th>
                         <th>Departure</th>
                         <th>Return</th>
                         <th>Destination</th>
@@ -1314,7 +1352,6 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                     ?>
                     <tr>
                         <td><?= htmlspecialchars($request['requestor_name']) ?></td>
-                        <td><?= htmlspecialchars($request['requestor_email']) ?></td>
                         <td>
                             <?php 
                             if (!empty($request['departure_date'])) {
@@ -1502,7 +1539,6 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                                 <thead>
                                     <tr>
                                         <th>Requestor Name</th>
-                                        <th>Email</th>
                                         <th>Departure</th>
                                         <th>Return</th>
                                         <th>Destination</th>
@@ -1522,7 +1558,6 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                                     <?php foreach ($dispatchPendingRequests as $request): ?>
                                     <tr>
                                         <td><?= htmlspecialchars($request['requestor_name']) ?></td>
-                                        <td><?= htmlspecialchars($request['requestor_email']) ?></td>
                                         <td>
                                             <?php 
                                             if (!empty($request['departure_date'])) {
@@ -1803,6 +1838,30 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
         var cancelModal = new bootstrap.Modal(document.getElementById('cancelRequestModal'));
         cancelModal.show();
     }
+
+    // Character counter for cancel reason
+document.addEventListener('DOMContentLoaded', function() {
+    var cancelReasonInput = document.getElementById('cancel_reason');
+    var charCount = document.getElementById('charCount');
+    
+    if (cancelReasonInput) {
+        cancelReasonInput.addEventListener('input', function() {
+            var length = this.value.length;
+            charCount.textContent = length + ' / 150 characters';
+            
+            // Change color when approaching limit
+            if (length > 140) {
+                charCount.classList.add('text-danger');
+            } else if (length > 120) {
+                charCount.classList.add('text-warning');
+                charCount.classList.remove('text-danger');
+            } else {
+                charCount.classList.remove('text-warning', 'text-danger');
+            }
+        });
+    }
+});
+
     function showPassengerWarningModal() {
     const modal = new bootstrap.Modal(document.getElementById('passengerWarningModal'));
     modal.show();
