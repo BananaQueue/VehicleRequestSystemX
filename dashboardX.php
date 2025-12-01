@@ -793,6 +793,7 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                 <div class="col-lg-9">
             <!-- Navigation Tabs -->
             <div class="nav-container">
+                <div class="d-flex justify-content-between align-items-center">
                 <ul class="nav nav-tabs" id="dashboardTabs">
                     <li class="nav-item">
                         <a class="nav-link active" data-bs-toggle="tab" href="#calendar">
@@ -839,6 +840,28 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                     </li>
                     <?php endif; ?>
                 </ul>
+                 <!-- REQUEST VEHICLE BUTTON - NEW LOCATION -->
+        <div class="ms-3">
+            <?php if ($isEmployee): ?>
+                <?php if ($isPassengerInActiveRequest && !$cannotRequest): ?>
+                <button type="button" 
+                        class="btn btn-success-modern btn-modern" 
+                        onclick="showPassengerWarningModal()">
+                    <i class="fas fa-plus me-2"></i>Request Vehicle
+                </button>
+                <?php else: ?>
+                <a href="create_request.php"
+                    class="btn btn-success-modern btn-modern <?= $cannotRequest ? 'disabled' : '' ?>">
+                    <i class="fas fa-plus me-2"></i>Request Vehicle
+                </a>
+                <?php endif; ?>
+            <?php elseif (!$isLoggedIn): ?>
+            <button class="btn btn-success-modern btn-modern" onclick="requireLogin()">
+                <i class="fas fa-plus me-2"></i>Request Vehicle
+            </button>
+            <?php endif; ?>
+            </div>
+            </div>
             </div>
 
             <!-- Tab Content -->
@@ -873,23 +896,6 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                             <a href="admin/add_vehicle.php" class="btn btn-primary-modern btn-modern">
                                 <i class="fas fa-plus me-2"></i>Add Vehicle
                             </a>
-                            <?php elseif ($isEmployee): ?>
-                                <?php if ($isPassengerInActiveRequest && !$cannotRequest): ?>
-                                <button type="button" 
-                                        class="btn btn-success-modern btn-modern" 
-                                        onclick="showPassengerWarningModal()">
-                                    <i class="fas fa-plus me-2"></i>Request Vehicle
-                                </button>
-                                <?php else: ?>
-                                    <a href="create_request.php"
-                                        class="btn btn-success-modern btn-modern <?= $cannotRequest ? 'disabled' : '' ?>">
-                                        <i class="fas fa-plus me-2"></i>Request Vehicle
-                                    </a>
-                                <?php endif; ?>
-                            <?php elseif (!$isLoggedIn): ?>
-                            <button class="btn btn-success-modern btn-modern" onclick="requireLogin()">
-                                <i class="fas fa-plus me-2"></i>Request Vehicle
-                            </button>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -1848,6 +1854,9 @@ document.addEventListener('DOMContentLoaded', function() {
         cancelReasonInput.addEventListener('input', function() {
             var length = this.value.length;
             charCount.textContent = length + ' / 150 characters';
+
+            // Remove all color classes first
+            charCount.classList.remove('text-danger', 'text-warning', 'text-muted');
             
             // Change color when approaching limit
             if (length > 140) {
@@ -1903,16 +1912,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     window.history.pushState({ path: newUrl.href }, '', newUrl.href);
                 });
             });
-
-             var cancelReasonInput = document.getElementById('cancel_reason');
-            var charCount = document.getElementById('charCount');
-        
-            if (cancelReasonInput) {
-                cancelReasonInput.addEventListener('input', function() {
-                    var length = this.value.length;
-                    charCount.textContent = length + ' / 150 characters';
-                });
-            }
         });
 
         // Function to show login required modal for guests
