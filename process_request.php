@@ -50,14 +50,68 @@ try {
             throw new Exception("Departure date is required before approval.");
         }
 
+        // Check for approved request conflicts (hard conflict - cannot proceed)
         if (has_vehicle_conflict($pdo, (int)$request['assigned_vehicle_id'], $requestStartDate, $requestEndDate, $request_id)) {
-            throw new Exception("Selected vehicle is already reserved within this date range.");
+            throw new Exception("Selected vehicle is already reserved within this date range by an approved request.");
         }
 
         if ($request['assigned_driver_id'] && has_driver_conflict($pdo, (int)$request['assigned_driver_id'], $requestStartDate, $requestEndDate, $request_id)) {
-            throw new Exception("Selected driver is already reserved within this date range.");
+            throw new Exception("Selected driver is already reserved within this date range by an approved request.");
         }
 
+        // NEW: Check for pending approval conflicts (soft warning - dispatch assigned same resource twice)
+        $pendingVehicleConflict = get_pending_vehicle_conflict($pdo, (int)$request['assigned_vehicle_id'], $requestStartDate, $requestEndDate, $request_id);
+        $pendingDriverConflict = $request['assigned_driver_id'] ? get_pending_driver_conflict($pdo, (int)$request['assigned_driver_id'], $requestStartDate, $requestEndDate, $request_id) : null;
+
+        $warnings = [];
+        
+        if ($pendingVehicleConflict) {
+            // Get vehicle plate number for better messaging
+            $vehicleStmt = $pdo->prepare("SELECT plate_number FROM vehicles WHERE id = :id");
+            $vehicleStmt->execute([':id' => $request['assigned_vehicle_id']]);
+            $vehiclePlate = $vehicleStmt->fetchColumn();
+            
+            $conflictDates = $pendingVehicleConflict['departure_date'];
+            if ($pendingVehicleConflict['return_date'] && $pendingVehicleConflict['return_date'] != $pendingVehicleConflict['departure_date']) {
+                $conflictDates .= ' to ' . $pendingVehicleConflict['return_date'];
+            }
+            
+            $warnings[] = sprintf(
+                "⚠️ CONFLICT WARNING: Vehicle %s is also assigned to %s's pending request (%s). Recommended to reassign vehicle to avoid double-booking.",
+                $vehiclePlate,
+                $pendingVehicleConflict['requestor_name'],
+                $conflictDates
+            );
+        }
+        
+        if ($pendingDriverConflict) {
+            // Get driver name for better messaging
+            $driverStmt = $pdo->prepare("SELECT name FROM drivers WHERE id = :id");
+            $driverStmt->execute([':id' => $request['assigned_driver_id']]);
+            $driverName = $driverStmt->fetchColumn();
+            
+            $conflictDates = $pendingDriverConflict['departure_date'];
+            if ($pendingDriverConflict['return_date'] && $pendingDriverConflict['return_date'] != $pendingDriverConflict['departure_date']) {
+                $conflictDates .= ' to ' . $pendingDriverConflict['return_date'];
+            }
+            
+            $warnings[] = sprintf(
+                "⚠️ CONFLICT WARNING: Driver %s is also assigned to %s's pending request (%s). Recommended to reassign driver to avoid double-booking.",
+                $driverName,
+                $pendingDriverConflict['requestor_name'],
+                $conflictDates
+            );
+        }
+
+        // If there are warnings, don't approve and send back to admin with details
+        if (!empty($warnings)) {
+            $pdo->rollBack();
+            $_SESSION['error'] = implode("<br>", $warnings);
+            header("Location: dashboardX.php#adminRequests");
+            exit();
+        }
+
+        // No conflicts - proceed with approval
         $updateRequestStmt = $pdo->prepare("UPDATE requests SET status = 'approved', rejection_reason = NULL WHERE id = :id AND status = 'pending_admin_approval'");
         $result = $updateRequestStmt->execute(['id' => $request_id]);
 
@@ -73,7 +127,7 @@ try {
             )
         ]);
 
-        $_SESSION['success'] = "Request approved.";
+        $_SESSION['success'] = "Request approved successfully.";
 
     } elseif ($action === 'reject') {
         if ($rejection_reason === 'reassign_vehicle' || $rejection_reason === 'reassign_driver') {
@@ -109,5 +163,6 @@ try {
     $_SESSION['error'] = "An error occurred while processing the request: " . $e->getMessage();
 }
 
-header("Location: dashboardX.php");
+header("Location: dashboardX.php#adminRequests");
+exit();
 ?>

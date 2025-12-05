@@ -4,7 +4,6 @@ require_once __DIR__ . '/includes/schedule_utils.php';
 include 'error.php';
 require 'db.php';
 
-
 // Check if user is logged in and is a dispatch user
 if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'dispatch') {
     $_SESSION['error'] = "Access denied. You must be logged in as a dispatch user.";
@@ -277,14 +276,14 @@ try {
                 </div>
 
                 <div class="stat-card">
-    <div class="stat-header">
-        <div class="stat-icon text-info">
-            <i class="fas fa-id-card"></i>
-        </div>
-    </div>
-    <div class="stat-number"><?= $availableDriversCount ?></div>
-    <div class="stat-label">Available Drivers</div>
-</div>
+                    <div class="stat-header">
+                        <div class="stat-icon text-info">
+                            <i class="fas fa-id-card"></i>
+                        </div>
+                    </div>
+                    <div class="stat-number"><?= $availableDriversCount ?></div>
+                    <div class="stat-label">Available Drivers</div>
+                </div>
             </div>
 
             <div class="row g-4 dashboard-grid align-items-start">
@@ -343,101 +342,127 @@ try {
                     </aside>
                 </div>
                 <div class="col-lg-9">
-                    <div class="calendar-container card p-3 mb-4">
-                        <div class="section-header mb-3">
-                            <h2 class="section-title mb-0">
-                                <i class="fas fa-calendar-alt me-2"></i>Vehicle Schedule
-                            </h2>
-                            <p class="text-muted mb-0">View existing assignments to avoid conflicts while dispatching.</p>
+                    <div class="nav-container">
+                        <ul class="nav nav-tabs" id="dispatchTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="calendar-tab" data-bs-toggle="tab" data-bs-target="#calendar-pane" type="button" role="tab" aria-controls="calendar-pane" aria-selected="true">
+                                    <i class="fas fa-calendar-alt me-2"></i>Vehicle Schedule
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="pending-tab" data-bs-toggle="tab" data-bs-target="#pending-pane" type="button" role="tab" aria-controls="pending-pane" aria-selected="false">
+                                    <i class="fas fa-clipboard-check me-2"></i>Pending Assignments
+                                    <?php if (!empty($pendingDispatchRequests)): ?>
+                                        <span class="badge bg-warning text-dark ms-2" id="pendingBadge"><?= count($pendingDispatchRequests) ?></span>
+                                    <?php endif; ?>
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
+                    
+                    <div class="tab-content" id="dispatchTabsContent">
+                        <!-- Calendar Tab -->
+                        <div class="tab-pane fade show active" id="calendar-pane" role="tabpanel" aria-labelledby="calendar-tab">
+                            <div class="table-container">
+                                <div class="section-header">
+                                    <h2 class="section-title text-white">
+                                        <i class="fas fa-calendar-alt"></i>
+                                        Vehicle Schedule Calendar
+                                    </h2>
+                                </div>
+                                <p class="text-muted mb-3">View existing assignments to avoid conflicts while dispatching.</p>
+                                <div id="dispatchCalendar"></div>
+                                <div class="calendar-legend mt-3">
+                                    <div class="legend-item"><span class="legend-dot legend-active"></span> In Use Today</div>
+                                    <div class="legend-item"><span class="legend-dot legend-upcoming"></span> Scheduled (Future)</div>
+                                    <div class="legend-item"><span class="legend-dot legend-complete"></span> Past</div>
+                                </div>
+                            </div>
                         </div>
-                        <div id="dispatchCalendar"></div>
-                    </div>
-                    <div class="calendar-legend card p-3">
-                        <div class="legend-item"><span class="legend-dot legend-active"></span> In Use Today</div>
-                        <div class="legend-item"><span class="legend-dot legend-upcoming"></span> Scheduled (Future)</div>
-                        <div class="legend-item"><span class="legend-dot legend-complete"></span> Past</div>
+                        
+                        <!-- Pending Assignments Tab -->
+                        <div class="tab-pane fade" id="pending-pane" role="tabpanel" aria-labelledby="pending-tab">
+                            <div class="table-container">
+                                <div class="section-header">
+                                    <h2 class="section-title text-warning">
+                                        <i class="fas fa-clipboard-check"></i>
+                                        Requests Pending Vehicle Assignment
+                                    </h2>
+                                    <?php if (!empty($pendingDispatchRequests)): ?>
+                                    <div class="badge bg-warning text-dark">
+                                        <?= count($pendingDispatchRequests) ?> Pending
+                                    </div>
+                                    <?php endif; ?>
+                                </div>
+                                
+                                <?php if (!empty($pendingDispatchRequests)): ?>
+                                <div class="table-responsive">
+                                    <table class="table table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th><i class="fas fa-user me-2"></i>Requestor Name</th>
+                                                <th><i class="fas fa-envelope me-2"></i>Email</th>
+                                                <th><i class="fas fa-map-marker-alt me-2"></i>Destination</th>
+                                                <th><i class="fas fa-clipboard me-2"></i>Purpose</th>
+                                                <th><i class="fas fa-calendar me-2"></i>Requested On</th>
+                                                <th><i class="fas fa-cogs me-2"></i>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($pendingDispatchRequests as $request): ?>
+                                            <tr>
+                                                <td>
+                                                    <div class="d-flex align-items-center">
+                                                        <?= htmlspecialchars($request['requestor_name']) ?>
+                                                    </div>
+                                                </td>
+                                                <td><?= htmlspecialchars($request['requestor_email']) ?></td>
+                                                <td>
+                                                    <span class="status-badge status-upcoming">
+                                                        <i class="fas fa-location-dot me-1"></i>
+                                                        <?= htmlspecialchars($request['destination']) ?>
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <div class="detail-value" style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                                        <?= htmlspecialchars($request['purpose']) ?>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <div>
+                                                        <i class="far fa-calendar-alt me-1"></i>
+                                                        <?= date('M j, Y', strtotime($request['request_date'])) ?>
+                                                        <small class="text-muted d-block">
+                                                            <?= date('g:i A', strtotime($request['request_date'])) ?>
+                                                        </small>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <div class="action-group">
+                                                        <a href="assign_dispatch_vehicle.php?request_id=<?= $request['id'] ?>" 
+                                                           class="btn-modern btn-primary-modern">
+                                                            <i class="fas fa-car-side me-1"></i>Assign Vehicle
+                                                        </a>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <?php else: ?>
+                                <div class="text-center py-5">
+                                    <div class="mb-3" style="font-size: 4rem; color: var(--border-color);">
+                                        <i class="fas fa-clipboard-check"></i>
+                                    </div>
+                                    <h3 class="mb-2">All Caught Up!</h3>
+                                    <p class="text-muted">No requests currently pending vehicle dispatch assignment.</p>
+                                </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
-
-            <!-- Main Content -->
-            <div class="table-container">
-                <div class="section-header">
-                    <h2 class="section-title text-warning">
-                        <i class="fas fa-clipboard-check"></i>
-                        Requests Pending Vehicle Assignment
-                    </h2>
-                    <?php if (!empty($pendingDispatchRequests)): ?>
-                    <div class="badge bg-warning text-dark">
-                        <?= count($pendingDispatchRequests) ?> Pending
-                    </div>
-                    <?php endif; ?>
-                </div>
-                
-                <?php if (!empty($pendingDispatchRequests)): ?>
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead>
-                            <tr>
-                                <th><i class="fas fa-user me-2"></i>Requestor Name</th>
-                                <th><i class="fas fa-envelope me-2"></i>Email</th>
-                                <th><i class="fas fa-map-marker-alt me-2"></i>Destination</th>
-                                <th><i class="fas fa-clipboard me-2"></i>Purpose</th>
-                                <th><i class="fas fa-calendar me-2"></i>Requested On</th>
-                                <th><i class="fas fa-cogs me-2"></i>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($pendingDispatchRequests as $request): ?>
-                            <tr>
-                                <td>
-                                    <div class="d-flex align-items-center">
-                                        <?= htmlspecialchars($request['requestor_name']) ?>
-                                    </div>
-                                </td>
-                                <td><?= htmlspecialchars($request['requestor_email']) ?></td>
-                                <td>
-                                    <span class="destination-badge">
-                                        <i class="fas fa-location-dot me-1"></i>
-                                        <?= htmlspecialchars($request['destination']) ?>
-                                    </span>
-                                </td>
-                                <td>
-                                    <div class="purpose-text">
-                                        <?= htmlspecialchars($request['purpose']) ?>
-                                    </div>
-                                </td>
-                                <td>
-                                    <div class="date-display">
-                                        <i class="far fa-calendar-alt me-1"></i>
-                                        <?= date('M j, Y', strtotime($request['request_date'])) ?>
-                                        <small class="text-muted d-block">
-                                            <?= date('g:i A', strtotime($request['request_date'])) ?>
-                                        </small>
-                                    </div>
-                                </td>
-                                <td>
-                                    <div class="action-group">
-                                        <a href="assign_dispatch_vehicle.php?request_id=<?= $request['id'] ?>" 
-                                           class="btn btn-primary-modern btn-modern">
-                                            <i class="fas fa-car-side me-1"></i>Assign Vehicle
-                                        </a>
-                                    </div>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-                <?php else: ?>
-                <div class="empty-state">
-                    <div class="empty-state-icon">
-                        <i class="fas fa-clipboard-check"></i>
-                    </div>
-                    <h3>All Caught Up!</h3>
-                    <p>No requests currently pending vehicle dispatch assignment.</p>
-                </div>
-                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -512,14 +537,45 @@ try {
     <script>
         const dispatchCalendarEvents = <?= json_encode(array_values($calendarEvents), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
         const dispatchCalendarDetails = <?= json_encode($calendarRequestDetails, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_FORCE_OBJECT); ?>;
+        const pendingRequestsCount = <?= $pendingDispatchCount ?>;
 
         document.addEventListener('DOMContentLoaded', function() {
+            // Add subtle animation to pending badge
+            const pendingBadge = document.getElementById('pendingBadge');
+            if (pendingBadge && pendingRequestsCount > 0) {
+                setInterval(function() {
+                    pendingBadge.style.transform = 'scale(1.1)';
+                    setTimeout(function() {
+                        pendingBadge.style.transform = 'scale(1)';
+                    }, 200);
+                }, 3000);
+            }
+            
+            // Store active tab in localStorage
+            const tabButtons = document.querySelectorAll('#dispatchTabs button[data-bs-toggle="tab"]');
+            tabButtons.forEach(button => {
+                button.addEventListener('shown.bs.tab', function (event) {
+                    localStorage.setItem('dispatchActiveTab', event.target.id);
+                });
+            });
+            
+            // Restore last active tab
+            const savedTab = localStorage.getItem('dispatchActiveTab');
+            if (savedTab) {
+                const tabButton = document.getElementById(savedTab);
+                if (tabButton) {
+                    const tab = new bootstrap.Tab(tabButton);
+                    tab.show();
+                }
+            }
+            
             const calendarElement = document.getElementById('dispatchCalendar');
             const dispatchModalEl = document.getElementById('dispatchCalendarModal');
             const dispatchModalInstance = dispatchModalEl ? new bootstrap.Modal(dispatchModalEl) : null;
+            let calendar = null;
 
             if (calendarElement && window.FullCalendar) {
-                const calendar = new FullCalendar.Calendar(calendarElement, {
+                calendar = new FullCalendar.Calendar(calendarElement, {
                     initialView: 'dayGridMonth',
                     height: 'auto',
                     headerToolbar: {
@@ -544,8 +600,42 @@ try {
                         }
                     }
                 });
+                
+                // Re-render calendar when tab is shown
+                const calendarTab = document.getElementById('calendar-tab');
+                if (calendarTab) {
+                    calendarTab.addEventListener('shown.bs.tab', function () {
+                        if (calendar) {
+                            setTimeout(() => calendar.render(), 100);
+                        }
+                    });
+                }
+                
+                // Initial render
                 calendar.render();
             }
+            
+            // Add keyboard shortcuts
+            document.addEventListener('keydown', function(e) {
+                // Alt + 1 = Calendar tab
+                if (e.altKey && e.key === '1') {
+                    e.preventDefault();
+                    const calendarTab = document.getElementById('calendar-tab');
+                    if (calendarTab) {
+                        const tab = new bootstrap.Tab(calendarTab);
+                        tab.show();
+                    }
+                }
+                // Alt + 2 = Pending tab
+                if (e.altKey && e.key === '2') {
+                    e.preventDefault();
+                    const pendingTab = document.getElementById('pending-tab');
+                    if (pendingTab) {
+                        const tab = new bootstrap.Tab(pendingTab);
+                        tab.show();
+                    }
+                }
+            });
 
             // Auto-dismiss Bootstrap alerts after 5 seconds
             const alerts = document.querySelectorAll('.alert');
@@ -568,7 +658,6 @@ try {
                         this.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Loading...';
                         this.classList.add('loading');
                         
-                        // Re-enable button after navigation or timeout
                         setTimeout(() => {
                             if (this.dataset.originalText) {
                                 this.innerHTML = this.dataset.originalText;
@@ -590,7 +679,6 @@ try {
 
         // Refresh page every 30 seconds for real-time updates
         setInterval(function() {
-            // Only refresh if no modals are open and user isn't actively interacting
             if (!document.querySelector('.modal.show') && !document.querySelector('.btn-modern.loading')) {
                 window.location.reload();
             }

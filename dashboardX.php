@@ -2215,6 +2215,106 @@ if (adminActionModal) {
                 auditContainer.appendChild(emptyState);
             }
         }
+        document.addEventListener('DOMContentLoaded', function() {
+    const adminActionModal = document.getElementById('adminActionModal');
+    
+    if (adminActionModal) {
+        adminActionModal.addEventListener('show.bs.modal', async function (event) {
+            const button = event.relatedTarget;
+            
+            // Get all data attributes
+            const requestId = button.getAttribute('data-request-id');
+            const assignedVehicle = button.getAttribute('data-assigned-vehicle');
+            const assignedDriver = button.getAttribute('data-assigned-driver');
+            const departureDate = button.getAttribute('data-departure-date');
+            const returnDate = button.getAttribute('data-return-date');
+            
+            // Populate modal fields (existing code)
+            document.getElementById('modalRequestId').value = requestId;
+            document.getElementById('modalRequestorName').textContent = button.getAttribute('data-requestor-name');
+            document.getElementById('modalRequestorEmail').textContent = button.getAttribute('data-requestor-email') || '----';
+            document.getElementById('modalDepartureDate').textContent = departureDate || '----';
+            document.getElementById('modalReturnDate').textContent = returnDate || '----';
+            document.getElementById('modalDestination').textContent = button.getAttribute('data-destination') || '----';
+            document.getElementById('modalPurpose').textContent = button.getAttribute('data-purpose') || '----';
+            document.getElementById('modalPassengers').textContent = button.getAttribute('data-passengers') || '----';
+            document.getElementById('modalAssignedVehicle').textContent = assignedVehicle || '----';
+            document.getElementById('modalAssignedDriver').textContent = assignedDriver || '----';
+            document.getElementById('modalRequestDate').textContent = button.getAttribute('data-request-date') || '----';
+            
+            // Reset form controls
+            const actionSelect = document.getElementById('actionSelect');
+            const rejectionReasonGroup = document.getElementById('rejectionReasonGroup');
+            const rejectionReasonSelect = document.getElementById('rejectionReason');
+            const modalAlert = document.getElementById('modalAlert');
+            
+            actionSelect.value = '';
+            rejectionReasonGroup.style.display = 'none';
+            rejectionReasonSelect.removeAttribute('required');
+            modalAlert.style.display = 'none';
+            
+            // NEW: Check for conflicts with other pending requests
+            if (assignedVehicle !== '----' && assignedVehicle !== 'TBD' && departureDate !== '----') {
+                try {
+                    const response = await fetch('check_pending_conflicts.php', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: new URLSearchParams({
+                            request_id: requestId,
+                            vehicle: assignedVehicle,
+                            driver: assignedDriver,
+                            departure_date: departureDate,
+                            return_date: returnDate,
+                            csrf_token: document.querySelector('input[name="csrf_token"]').value
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.has_conflicts) {
+                        let warningHtml = '<div class="alert alert-warning mb-3" role="alert">';
+                        warningHtml += '<h6 class="alert-heading"><i class="fas fa-exclamation-triangle me-2"></i>Conflict Detected!</h6>';
+                        
+                        if (data.vehicle_conflict) {
+                            warningHtml += '<p class="mb-2"><strong>Vehicle Conflict:</strong> ' + data.vehicle_conflict.message + '</p>';
+                        }
+                        
+                        if (data.driver_conflict) {
+                            warningHtml += '<p class="mb-2"><strong>Driver Conflict:</strong> ' + data.driver_conflict.message + '</p>';
+                        }
+                        
+                        warningHtml += '<hr class="my-2">';
+                        warningHtml += '<p class="mb-0 small"><i class="fas fa-info-circle me-1"></i><strong>Recommendation:</strong> Reject this request and select "Reassign Vehicle" or "Reassign Driver" to send it back to dispatch for reassignment.</p>';
+                        warningHtml += '</div>';
+                        
+                        // Insert warning at the top of the modal body
+                        const modalBody = adminActionModal.querySelector('.modal-body');
+                        const existingWarning = modalBody.querySelector('.conflict-warning-container');
+                        
+                        if (existingWarning) {
+                            existingWarning.innerHTML = warningHtml;
+                        } else {
+                            const warningContainer = document.createElement('div');
+                            warningContainer.className = 'conflict-warning-container';
+                            warningContainer.innerHTML = warningHtml;
+                            modalBody.insertBefore(warningContainer, modalBody.firstChild);
+                        }
+                    } else {
+                        // Remove any existing warning
+                        const existingWarning = adminActionModal.querySelector('.conflict-warning-container');
+                        if (existingWarning) {
+                            existingWarning.remove();
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error checking conflicts:', error);
+                }
+            }
+        });
+    }
+});
     </script>
 </body>
 

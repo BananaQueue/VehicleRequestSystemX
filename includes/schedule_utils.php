@@ -29,12 +29,17 @@ function get_request_date_range(array $request): array
     ];
 }
 
+/**
+ * Check if a vehicle has a scheduling conflict with approved requests
+ * FIXED: Only checks 'approved' status, not 'pending_admin_approval'
+ * Vehicles should only be unavailable for APPROVED bookings
+ */
 function has_vehicle_conflict(PDO $pdo, int $vehicleId, string $startDate, string $endDate, ?int $excludeRequestId = null): bool
 {
     $query = "
         SELECT COUNT(*) FROM requests
         WHERE assigned_vehicle_id = :vehicle_id
-          AND status IN ('pending_admin_approval', 'approved')
+          AND status = 'approved'
           AND COALESCE(departure_date, DATE(request_date)) IS NOT NULL
           AND :start_date <= COALESCE(return_date, departure_date, DATE(request_date))
           AND :end_date >= COALESCE(departure_date, DATE(request_date))
@@ -57,12 +62,17 @@ function has_vehicle_conflict(PDO $pdo, int $vehicleId, string $startDate, strin
     return (int)$stmt->fetchColumn() > 0;
 }
 
+/**
+ * Check if a driver has a scheduling conflict with approved requests
+ * FIXED: Only checks 'approved' status, not 'pending_admin_approval'
+ * Drivers should only be unavailable for APPROVED bookings
+ */
 function has_driver_conflict(PDO $pdo, int $driverId, string $startDate, string $endDate, ?int $excludeRequestId = null): bool
 {
     $query = "
         SELECT COUNT(*) FROM requests
         WHERE assigned_driver_id = :driver_id
-          AND status IN ('pending_admin_approval', 'approved')
+          AND status = 'approved'
           AND COALESCE(departure_date, DATE(request_date)) IS NOT NULL
           AND :start_date <= COALESCE(return_date, departure_date, DATE(request_date))
           AND :end_date >= COALESCE(departure_date, DATE(request_date))
@@ -83,6 +93,102 @@ function has_driver_conflict(PDO $pdo, int $driverId, string $startDate, string 
     $stmt->execute($params);
 
     return (int)$stmt->fetchColumn() > 0;
+}
+
+/**
+ * Check if a vehicle has pending approval conflicts (dispatch assigned same vehicle to multiple requests)
+ * Returns details of conflicting request if found
+ * 
+ * @param PDO $pdo
+ * @param int $vehicleId
+ * @param string $startDate
+ * @param string $endDate
+ * @param int|null $excludeRequestId
+ * @return array|null Array with conflict details or null if no conflict
+ */
+function get_pending_vehicle_conflict(PDO $pdo, int $vehicleId, string $startDate, string $endDate, ?int $excludeRequestId = null): ?array
+{
+    $query = "
+        SELECT 
+            r.id,
+            r.requestor_name,
+            r.departure_date,
+            r.return_date,
+            r.destination
+        FROM requests r
+        WHERE r.assigned_vehicle_id = :vehicle_id
+          AND r.status = 'pending_admin_approval'
+          AND COALESCE(r.departure_date, DATE(r.request_date)) IS NOT NULL
+          AND :start_date <= COALESCE(r.return_date, r.departure_date, DATE(r.request_date))
+          AND :end_date >= COALESCE(r.departure_date, DATE(r.request_date))
+    ";
+
+    $params = [
+        ':vehicle_id' => $vehicleId,
+        ':start_date' => $startDate,
+        ':end_date' => $endDate,
+    ];
+
+    if ($excludeRequestId) {
+        $query .= " AND r.id != :exclude_id";
+        $params[':exclude_id'] = $excludeRequestId;
+    }
+    
+    $query .= " LIMIT 1";
+
+    $stmt = $pdo->prepare($query);
+    $stmt->execute($params);
+
+    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $result ?: null;
+}
+
+/**
+ * Check if a driver has pending approval conflicts (dispatch assigned same driver to multiple requests)
+ * Returns details of conflicting request if found
+ * 
+ * @param PDO $pdo
+ * @param int $driverId
+ * @param string $startDate
+ * @param string $endDate
+ * @param int|null $excludeRequestId
+ * @return array|null Array with conflict details or null if no conflict
+ */
+function get_pending_driver_conflict(PDO $pdo, int $driverId, string $startDate, string $endDate, ?int $excludeRequestId = null): ?array
+{
+    $query = "
+        SELECT 
+            r.id,
+            r.requestor_name,
+            r.departure_date,
+            r.return_date,
+            r.destination
+        FROM requests r
+        WHERE r.assigned_driver_id = :driver_id
+          AND r.status = 'pending_admin_approval'
+          AND COALESCE(r.departure_date, DATE(r.request_date)) IS NOT NULL
+          AND :start_date <= COALESCE(r.return_date, r.departure_date, DATE(r.request_date))
+          AND :end_date >= COALESCE(r.departure_date, DATE(r.request_date))
+    ";
+
+    $params = [
+        ':driver_id' => $driverId,
+        ':start_date' => $startDate,
+        ':end_date' => $endDate,
+    ];
+
+    if ($excludeRequestId) {
+        $query .= " AND r.id != :exclude_id";
+        $params[':exclude_id'] = $excludeRequestId;
+    }
+    
+    $query .= " LIMIT 1";
+
+    $stmt = $pdo->prepare($query);
+    $stmt->execute($params);
+
+    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $result ?: null;
 }
 
 function sync_active_assignments(PDO $pdo): void
@@ -174,4 +280,3 @@ function sync_active_assignments(PDO $pdo): void
         $pdo->exec("UPDATE drivers SET status = 'available' WHERE status = 'assigned'");
     }
 }
-
