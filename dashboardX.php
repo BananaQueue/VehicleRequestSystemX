@@ -664,7 +664,6 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
             <!--Alert Section-->
             <?php if ($isEmployee && $passengerRequestDetails !== null): ?>
             <div class="modern-alert">
-                <i class="fas fa-users alert-icon"></i>
                 <div class="alert alert-permanent alert-info">
                     <strong>Passenger Status:</strong> You are currently listed as a passenger in 
                     <strong><?= htmlspecialchars($passengerRequestDetails['requestor_name'])?></strong>'s vehicle request.
@@ -676,7 +675,6 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
             <?php if ($isEmployee): ?>
                     <?php if ($employeeRequestStatus === 'rejected_reassign_dispatch'): ?>
                     <div class="modern-alert">
-                        <i class="fas fa-sync-alt alert-icon"></i>
                         <div class="alert alert-permanent alert-warning">
                             <strong>Request Under Reassignment:</strong> Your vehicle request was sent back to dispatch for reassignment.  
                             You cannot submit a new request until this process is complete.
