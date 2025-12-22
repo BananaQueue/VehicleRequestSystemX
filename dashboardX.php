@@ -1238,9 +1238,8 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                                     <tr>
                                         <th>Name</th>
                                         <th>Email</th>
-                                        <th>Position</th>
                                         <th>Phone</th>
-                                        <th> Current Status</th>
+                                        <th>Current Status</th>
                                         <th>Actions</th>
                                     </tr>
                                 </thead>
@@ -1254,7 +1253,6 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                                     <tr>
                                         <td><?= htmlspecialchars($driver['name']) ?></td>
                                         <td><?= htmlspecialchars($driver['email']) ?></td>
-                                        <td><?= htmlspecialchars($driver['position']) ?></td>
                                         <td><?= htmlspecialchars($driver['phone'] ?? '') ?></td>
                                         <td>
                                             <?php if ($driver['is_assigned']): ?>

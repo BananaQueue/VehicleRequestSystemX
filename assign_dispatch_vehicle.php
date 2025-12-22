@@ -47,7 +47,7 @@ try {
         exit();
     }
 
-    // Fetch available vehicles
+    // FIXED: Fetch available vehicles - Only check against APPROVED requests, not pending ones
     $stmt = $pdo->prepare("
         SELECT *
         FROM vehicles v
@@ -55,7 +55,7 @@ try {
           AND NOT EXISTS (
               SELECT 1 FROM requests r
               WHERE r.assigned_vehicle_id = v.id
-                AND r.status IN ('pending_admin_approval', 'approved')
+                AND r.status = 'approved'
                 AND :start_date <= COALESCE(r.return_date, r.departure_date, DATE(r.request_date))
                 AND :end_date >= COALESCE(r.departure_date, DATE(r.request_date))
                 AND r.id != :current_request_id
@@ -69,7 +69,7 @@ try {
     ]);
     $availableVehicles = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Fetch available drivers (only those with 'available' status)
+    // FIXED: Fetch available drivers - Only check against APPROVED requests, not pending ones
     $stmt = $pdo->prepare("
         SELECT *
         FROM drivers d
@@ -77,7 +77,7 @@ try {
           AND NOT EXISTS (
               SELECT 1 FROM requests r
               WHERE r.assigned_driver_id = d.id
-                AND r.status IN ('pending_admin_approval', 'approved')
+                AND r.status = 'approved'
                 AND :start_date <= COALESCE(r.return_date, r.departure_date, DATE(r.request_date))
                 AND :end_date >= COALESCE(r.departure_date, DATE(r.request_date))
                 AND r.id != :current_request_id
@@ -127,7 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['assign_vehicle'])) {
                 throw new Exception("Selected driver not found.");
             }
 
-            // Confirm vehicle availability for requested dates
+            // Confirm vehicle availability for requested dates (only checks approved requests)
             if (has_vehicle_conflict($pdo, $selected_vehicle_id, $requestStartDate, $requestEndDate, $request_id)) {
                 throw new Exception("Selected vehicle already has a reservation within the requested dates.");
             }
@@ -309,7 +309,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['assign_vehicle'])) {
                 </select>
                 <?php if (empty($availableVehicles)): ?>
                     <div class="form-text text-danger">
-                        <i class="fas fa-info-circle me-1"></i>No vehicles currently available
+                        <i class="fas fa-info-circle me-1"></i>No vehicles currently available for the requested dates
+                    </div>
+                <?php else: ?>
+                    <div class="form-text text-success">
+                        <i class="fas fa-check-circle me-1"></i><?= count($availableVehicles) ?> vehicle(s) available for <?= date('M j', strtotime($requestStartDate)) ?> - <?= date('M j, Y', strtotime($requestEndDate)) ?>
                     </div>
                 <?php endif; ?>
             </div>
@@ -331,7 +335,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['assign_vehicle'])) {
                 </select>
                 <?php if (empty($availableDrivers)): ?>
                     <div class="form-text text-danger">
-                        <i class="fas fa-info-circle me-1"></i>No drivers currently available
+                        <i class="fas fa-info-circle me-1"></i>No drivers currently available for the requested dates
+                    </div>
+                <?php else: ?>
+                    <div class="form-text text-success">
+                        <i class="fas fa-check-circle me-1"></i><?= count($availableDrivers) ?> driver(s) available for <?= date('M j', strtotime($requestStartDate)) ?> - <?= date('M j, Y', strtotime($requestEndDate)) ?>
                     </div>
                 <?php endif; ?>
             </div>
@@ -340,6 +348,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['assign_vehicle'])) {
                 <button type="submit" class="btn btn-primary w-100" disabled>
                     <i class="fas fa-ban me-2"></i>Assign Vehicle (Unavailable)
                 </button>
+                <div class="alert alert-info mt-3">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>Note:</strong> All vehicles/drivers are currently reserved for approved trips during these dates. 
+                    You can still assign a vehicle, and conflicts will be checked when the admin reviews the request.
+                </div>
             <?php else: ?>
                 <button type="submit" name="assign_vehicle" class="btn btn-primary w-100">
                     <i class="fas fa-check-circle me-2"></i>Assign Vehicle
