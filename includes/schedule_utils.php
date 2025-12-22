@@ -195,6 +195,42 @@ function sync_active_assignments(PDO $pdo): void
 {
     $today = date('Y-m-d');
 
+    // IMPROVED: First, release ALL vehicles/drivers from past trips
+    // Get all approved requests that have ended (return_date < today)
+    $pastTripsStmt = $pdo->prepare("
+        SELECT DISTINCT r.assigned_vehicle_id, r.assigned_driver_id
+        FROM requests r
+        WHERE r.status = 'approved'
+          AND r.assigned_vehicle_id IS NOT NULL
+          AND COALESCE(r.return_date, r.departure_date, DATE(r.request_date)) < :today
+    ");
+    $pastTripsStmt->execute([':today' => $today]);
+    $pastTrips = $pastTripsStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Release vehicles from past trips
+    foreach ($pastTrips as $pastTrip) {
+        if ($pastTrip['assigned_vehicle_id']) {
+            $releaseVehicle = $pdo->prepare("
+                UPDATE vehicles
+                SET status = 'available',
+                    assigned_to = NULL,
+                    driver_name = NULL
+                WHERE id = :id AND status = 'assigned'
+            ");
+            $releaseVehicle->execute([':id' => $pastTrip['assigned_vehicle_id']]);
+        }
+        
+        if ($pastTrip['assigned_driver_id']) {
+            $releaseDriver = $pdo->prepare("
+                UPDATE drivers
+                SET status = 'available'
+                WHERE id = :id AND status = 'assigned'
+            ");
+            $releaseDriver->execute([':id' => $pastTrip['assigned_driver_id']]);
+        }
+    }
+
+    // Now handle TODAY's active trips
     $activeStmt = $pdo->prepare("
         SELECT 
             r.id,
@@ -226,8 +262,8 @@ function sync_active_assignments(PDO $pdo): void
             $vehicleUpdate = $pdo->prepare("
                 UPDATE vehicles
                 SET status = 'assigned',
-                    assigned_to = :assigned_to,
-                    driver_name = :driver_name
+                    assigned_to = NULL,
+                    driver_name = NULL
                 WHERE id = :id
             ");
             $vehicleUpdate->execute([
@@ -243,8 +279,12 @@ function sync_active_assignments(PDO $pdo): void
             $driverUpdate->execute([':id' => $driverId]);
         }
     }
+    // Remove null or empty IDs (prevents SQLSTATE[HY093])
+    $activeVehicleIds = array_values(array_filter($activeVehicleIds));
+    $activeDriverIds  = array_values(array_filter($activeDriverIds));
+    
 
-    // Release vehicles that are currently marked assigned but have no active trips today
+    // Release any remaining vehicles that are marked assigned but have no active trips today
     if (!empty($activeVehicleIds)) {
         $placeholders = implode(',', array_fill(0, count($activeVehicleIds), '?'));
         $releaseStmt = $pdo->prepare("
@@ -279,4 +319,18 @@ function sync_active_assignments(PDO $pdo): void
     } else {
         $pdo->exec("UPDATE drivers SET status = 'available' WHERE status = 'assigned'");
     }
+}
+
+function getStatusTextDispatch($status) {
+    $map = [
+        'pending_dispatch_assignment' => 'Awaiting Dispatch',
+        'pending_admin_approval' => 'Awaiting Admin Approval',
+        'approved' => 'Approved',
+        'rejected_new_request' => 'Rejected (New Request)',
+        'rejected_reassign_dispatch' => 'Rejected (Reassign Dispatch)',
+        'rejected' => 'Rejected',
+        'cancelled' => 'Cancelled',
+        'concluded' => 'Concluded',
+    ];
+    return $map[$status] ?? ucfirst(str_replace('_', ' ', $status));
 }

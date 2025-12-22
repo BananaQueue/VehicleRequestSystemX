@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/session.php';
 require 'db.php';
+require_once __DIR__ . '/includes/passenger_validation.php';
 
 // Check if user is logged in and is an employee
 if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'employee') {
@@ -13,69 +14,12 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'employee') {
 $user_id = $_SESSION['user']['id'];
 $requestor_name = $_SESSION['user']['name'];
 $requestor_email = $_SESSION['user']['email'];
-$isEmployee = true; // FIXED: Define this variable
-$username = $requestor_name; // FIXED: Define username
+$isEmployee = true;
+$username = $requestor_name;
 
 $errors = [];
 $success = '';
 
-function validatePassengerAvailability($pdo, $passengerName, $excludeRequestId = null) {
-    // Check if passenger has active request (not concluded ones)
-    $stmt = $pdo->prepare("
-        SELECT id, status, departure_date, return_date
-        FROM requests 
-        WHERE user_id = (SELECT id FROM users WHERE name = :name)
-        AND status IN ('pending_dispatch_assignment', 'pending_admin_approval', 'approved')
-        AND departure_date >= CURDATE()  -- ADDED: Only future/current trips
-        LIMIT 1
-    ");
-    $stmt->execute(['name' => $passengerName]);
-    $activeRequest = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if ($activeRequest) {
-        return [
-            'available' => false,
-            'reason' => 'has_active_request',
-            'message' => 'has an active vehicle request'
-        ];
-    }
-    
-    // Check for assigned vehicle
-    $stmt = $pdo->prepare("
-        SELECT plate_number FROM vehicles 
-        WHERE assigned_to = :name AND status = 'assigned'
-        LIMIT 1
-    ");
-    $stmt->execute(['name' => $passengerName]);
-    $assignedVehicle = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if ($assignedVehicle) {
-        return [
-            'available' => false,
-            'reason' => 'has_assigned_vehicle',
-            'message' => 'has an assigned vehicle (' . $assignedVehicle['plate_number'] . ')'
-        ];
-    }
-    
-    // Check for returning vehicle
-    $stmt = $pdo->prepare("
-        SELECT plate_number FROM vehicles 
-        WHERE returned_by = :name AND status = 'returning'
-        LIMIT 1
-    ");
-    $stmt->execute(['name' => $passengerName]);
-    $returningVehicle = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if ($returningVehicle) {
-        return [
-            'available' => false,
-            'reason' => 'returning_vehicle',
-            'message' => 'is returning a vehicle (' . $returningVehicle['plate_number'] . ')'
-        ];
-    }
-    
-    return ['available' => true, 'message' => 'Available'];
-}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validate_csrf_token_post(); // Validate CSRF token for POST requests
@@ -106,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = "At least 1 passenger is required.";
     }
     
-    // ADDED: Validate passenger availability
+    // Validate passenger availability
     if (!empty($passenger_names)) {
         foreach ($passenger_names as $passenger) {
             // Skip validation for the requestor
@@ -162,57 +106,15 @@ unset($_SESSION['errors']);
 $old_post = $_SESSION['old_post'] ?? [];
 unset($_SESSION['old_post']);
 
-// FIXED: Initialize form variables
+// Initialize form variables
 $destination = $old_post['destination'] ?? '';
 $purpose = $old_post['purpose'] ?? '';
 $departure_date = $old_post['departure_date'] ?? '';
 $return_date = $old_post['return_date'] ?? '';
 
 // Fetch employees with availability status for passenger selection
-$employees = [];
-try {
-    $stmt = $pdo->query("SELECT id, name, email, position FROM users WHERE role = 'employee' ORDER BY name ASC");
-    $employees = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
-    // ADDED: Add availability status to each employee
-    foreach ($employees as &$employee) {
-        // Don't validate the requestor themselves
-        if ($employee['name'] === $requestor_name) {
-            $employee['is_available'] = true;
-            $employee['unavailable_reason'] = '';
-            continue;
-        }
-        
-        $validation = validatePassengerAvailability($pdo, $employee['name']);
-        $employee['is_available'] = $validation['available'];
-        $employee['unavailable_reason'] = $validation['message'] ?? '';
-    }
-    unset($employee); // Break reference
-} catch (PDOException $e) {
-    error_log("Error fetching employees: " . $e->getMessage());
-    $employees = [];
-}
+$employees = getEmployeeListWithAvailability($pdo);
 
-// FIXED: Check if employee is a passenger in another request
-$showPassengerWarning = false;
-$passengerWarningDetails = null;
-
-if ($isEmployee) {
-    $stmt = $pdo->prepare("
-        SELECT r.id, r.requestor_name, r.status, r.departure_date
-        FROM requests r 
-        WHERE r.status IN ('pending_dispatch_assignment', 'pending_admin_approval', 'approved')
-        AND r.departure_date >= CURDATE()  -- ADDED: Only future/current trips
-        AND JSON_SEARCH(r.passenger_names, 'one', :username) IS NOT NULL
-    ");
-    $stmt->execute(['username' => $username]);
-    $passengerInRequest = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if ($passengerInRequest) {
-        $showPassengerWarning = true;
-        $passengerWarningDetails = $passengerInRequest;
-    }
-}
 ?>
 
 <!DOCTYPE html>
@@ -235,16 +137,6 @@ if ($isEmployee) {
                 <p>Fill out the form below to submit your vehicle request.</p>
             </div>
             
-            <?php if (isset($showPassengerWarning) && $showPassengerWarning): ?>
-            <div class="alert alert-warning alert-dismissible fade show" role="alert">
-                <i class="fas fa-exclamation-triangle me-2"></i>
-                <strong>Notice:</strong> You are currently listed as a passenger in 
-                <strong><?= htmlspecialchars($passengerWarningDetails['requestor_name']) ?></strong>'s vehicle request.
-                Please coordinate your travel plans accordingly.
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-            <?php endif; ?>
-        
             <?php if (!empty($errors)): ?>
                 <div class="alert alert-danger alert-dismissible fade show" role="alert">
                     <?php foreach ($errors as $error): ?>
@@ -298,7 +190,7 @@ if ($isEmployee) {
                                 <label for="departure_date" class="form-label">Departure Date</label>
                                 <input type="date" class="form-control text-dark" id="departure_date" name="departure_date" value="<?= htmlspecialchars($departure_date) ?>" min="<?= date('Y-m-d') ?>" required>
                                 <?php if (isset($errors['departure_date'])): ?>
-                                    <div class="text-danger"><?= htmlspecialchars($errors['departure_date']) ?></div>
+                                    <div class="text-danger"><?= htmlspecialchars($errors['departure']) ?></div>
                                 <?php endif; ?>
                             </div>
                             <div class="col-md-6">

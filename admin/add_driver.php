@@ -1,54 +1,30 @@
 <?php
 require_once __DIR__ . '/../includes/session.php';
 require '../db.php';
+require_once __DIR__ . '/add_entry.php'; // Include the generic add utility
 
-// ✅ STANDARDIZED: Use helper function instead of manual check
 require_role('admin', '../login.php');
 
-// ✅ STANDARDIZED: Initialize errors array for consistent error handling
+// Initialize errors array for consistent error handling
 $errors = [];
+$name = $_POST['name'] ?? '';
+$email = $_POST['email'] ?? '';
+$phone = $_POST['phone'] ?? '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // ✅ STANDARDIZED: Use helper function for CSRF validation
-    validate_csrf_token_post('add_driver.php');
+    $result = handle_add_entry(
+        $pdo,
+        'drivers',
+        ['name' => 'name', 'email' => 'email', 'phone' => 'phone'],
+        ['name' => 'required', 'email' => 'required|email'],
+        ['email' => 'Email'],
+        "Driver '%s' added successfully.",
+        "../dashboardX.php#driverManagement",
+        ['default_status_field' => 'status']
+    );
 
-    // ✅ STANDARDIZED: Consistent input sanitization pattern
-    $name = htmlspecialchars(trim($_POST['name'] ?? ''));
-    $email = htmlspecialchars(trim($_POST['email'] ?? ''));
-    $phone = htmlspecialchars(trim($_POST['phone'] ?? ''));
-
-    // Validate inputs - collect all errors
-    if (empty($name)) $errors[] = "Name is required.";
-    if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = "Valid email is required.";
-
-    // ✅ STANDARDIZED: Handle errors consistently
-    if (!empty($errors)) {
-        // Don't redirect on validation errors - stay on page to show form with retained values
-    } else {
-        try {
-            // Check if email already exists
-            $checkStmt = $pdo->prepare("SELECT id FROM drivers WHERE email = :email");
-            $checkStmt->execute(['email' => $email]);
-            if ($checkStmt->fetch()) {
-                $errors[] = "Email already exists.";
-            } else {
-                // Insert new driver
-                $stmt = $pdo->prepare("INSERT INTO drivers (name, email, phone) VALUES (?, ?, ?)");
-                $result = $stmt->execute([$name, $email, $phone]);
-                
-                if ($result) {
-                    $_SESSION['success_message'] = "Driver '" . $name . "' added successfully.";
-                    header("Location: ../dashboardX.php#driverManagement");
-                    exit();
-                } else {
-                    $errors[] = "Failed to add driver. Please try again.";
-                }
-            }
-        } catch (PDOException $e) {
-            // ✅ STANDARDIZED: Consistent error logging pattern
-            error_log("Add Driver PDO Error: " . $e->getMessage());
-            $errors[] = "An unexpected error occurred while adding the driver.";
-        }
+    if (!$result['success']) {
+        $errors = $result['errors'];
     }
 }
 ?>
@@ -148,38 +124,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }, 5000); // 5000 milliseconds = 5 seconds
     });
-    
-    // Basic client-side validation
-    var form = document.querySelector('form');
-    form.addEventListener('submit', function(e) {
-        var name = document.getElementById('name').value.trim();
-        var email = document.getElementById('email').value.trim();
-        var phone = document.getElementById('phone').value.trim();
-        
-        // Basic validation
-        if (name === '') {
-            e.preventDefault();
-            alert('Please enter a driver name.');
-            return false;
-        }
-        
-        // Basic email validation
-        var emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            e.preventDefault();
-            alert('Please enter a valid email address.');
-            return false;
-        }
-
-        // Phone number validation
-        var phoneRegex = /^09\d{9}$/;
-        if (!phoneRegex.test(phone)) {
-            e.preventDefault();
-            alert('Please enter a valid Philippine mobile number (09XXXXXXXXX).');
-            return false;
-        }
-    });
-
 });
 </script>
 </body>

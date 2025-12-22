@@ -1,72 +1,75 @@
 <?php
 require_once __DIR__ . '/../includes/session.php';
 require '../db.php';
+require_once __DIR__ . '/add_entry.php'; // Include the generic add utility
 
-// ✅ STANDARDIZED: Use helper function instead of manual check
 require_role('admin', '../login.php');
 
-// ✅ STANDARDIZED: Initialize errors array for consistent error handling
 $errors = [];
+$plate = $_POST['plate_number'] ?? '';
+$driver = $_POST['driver_name'] ?? null;
+$make = $_POST['make'] ?? '';
+$model = $_POST['model'] ?? '';
+$type = $_POST['type'] ?? '';
 
-// ✅ STANDARDIZED: Fetch drivers for dropdown
+// Fetch drivers for dropdown
 $drivers = [];
 try {
     $drivers = $pdo->query("SELECT name FROM drivers ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     error_log("Driver Fetch Error: " . $e->getMessage());
+    $errors[] = "Could not load drivers list.";
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // ✅ STANDARDIZED: Use helper function for CSRF validation
-    validate_csrf_token_post('add_vehicle.php');
-
-    // ✅ STANDARDIZED: Consistent input sanitization pattern
-    $plate = htmlspecialchars(trim($_POST['plate_number'] ?? ''));
-    $driver = !empty($_POST['driver_name']) ? trim($_POST['driver_name']) : null;
-    $make = htmlspecialchars(trim($_POST['make'] ?? ''));
-    $model = htmlspecialchars(trim($_POST['model'] ?? ''));
-    $type = htmlspecialchars(trim($_POST['type'] ?? ''));
-
-    // Input validation - collect all errors
-    if (empty($plate)) $errors[] = "Plate number is required.";
-    if (empty($make)) $errors[] = "Make is required.";
-    if (empty($model)) $errors[] = "Model is required.";
-    if (empty($type)) $errors[] = "Type is required.";
-
-    // Check if driver is already assigned to another vehicle
-    if ($driver) {
-        try {
+// Conditional insert function for vehicles
+$conditionalVehicleInsert = function(PDO $pdo, array $data, array $fields, string $successMessage, string $redirectLocation, array $optionalData) use ($driver) {
+    $currentErrors = [];
+    try {
+        // Check if driver is already assigned to another vehicle, if a driver is selected
+        if (!empty($data['driver_name'])) {
             $checkStmt = $pdo->prepare("SELECT id FROM vehicles WHERE driver_name = ?");
-            $checkStmt->execute([$driver]);
+            $checkStmt->execute([$data['driver_name']]);
             if ($checkStmt->fetch()) {
-                $errors[] = "This driver is already assigned to another vehicle.";
+                $currentErrors[] = "This driver is already assigned to another vehicle.";
+                return ['success' => false, 'errors' => $currentErrors];
             }
-        } catch (PDOException $e) {
-            error_log("Driver Check Error: " . $e->getMessage());
-            $errors[] = "Error checking driver assignment.";
         }
-    }
 
-    // ✅ STANDARDIZED: Handle errors consistently
-    if (!empty($errors)) {
-        // Don't redirect on validation errors - stay on page to show form with retained values
-    } else {
-        try {
-            $stmt = $pdo->prepare("INSERT INTO vehicles (plate_number, driver_name, make, model, type, status) VALUES (?, ?, ?, ?, ?, 'available')");
-            $result = $stmt->execute([$plate, $driver, $make, $model, $type]);
-            
-            if ($result) {
-                $_SESSION['success_message'] = "Vehicle added successfully.";
-                header("Location: ../dashboardX.php");
-                exit();
-            } else {
-                $errors[] = "Failed to add vehicle. Please try again.";
-            }
-        } catch (PDOException $e) {
-            // ✅ STANDARDIZED: Consistent error logging pattern
-            error_log("Add Vehicle PDO Error: " . $e->getMessage());
-            $errors[] = "An unexpected error occurred while adding the vehicle.";
+        $stmt = $pdo->prepare("INSERT INTO vehicles (plate_number, driver_name, make, model, type, status) VALUES (?, ?, ?, ?, ?, 'available')");
+        $result = $stmt->execute([$data['plate_number'], $data['driver_name'], $data['make'], $data['model'], $data['type']]);
+        
+        if ($result) {
+            $_SESSION['success_message'] = "Vehicle '" . $data['plate_number'] . "' added successfully.";
+            header("Location: ../dashboardX.php");
+            exit();
+        } else {
+            $currentErrors[] = "Failed to add vehicle. Please try again.";
+            return ['success' => false, 'errors' => $currentErrors];
         }
+    } catch (PDOException $e) {
+        error_log("Add Vehicle PDO Error: " . $e->getMessage());
+        $currentErrors[] = "An unexpected error occurred while adding the vehicle.";
+        return ['success' => false, 'errors' => $currentErrors];
+    }
+};
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $result = handle_add_entry(
+        $pdo,
+        'vehicles',
+        ['plate_number' => 'plate_number', 'driver_name' => 'driver_name', 'make' => 'make', 'model' => 'model', 'type' => 'type'],
+        ['plate_number' => 'required', 'make' => 'required', 'model' => 'required', 'type' => 'required'],
+        ['plate_number' => 'Plate number'],
+        "Vehicle '%s' added successfully.",
+        "../dashboardX.php", // This will be overridden by conditional insert
+        [
+            'default_status_field' => 'status',
+            'conditional_insert' => $conditionalVehicleInsert
+        ]
+    );
+
+    if (!$result['success']) {
+        $errors = array_merge($errors, $result['errors']);
     }
 }
 ?>
@@ -91,7 +94,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <p class="mb-4">Fill in the details to add a new vehicle to the fleet.</p>
         </div>
         
-        <!-- ✅ STANDARDIZED: Consistent error display pattern -->
         <?php if (!empty($errors)): ?>
             <div class="alert alert-danger alert-dismissible fade show" role="alert">
                 <?php foreach ($errors as $error): ?>
@@ -101,7 +103,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         <?php endif; ?>
 
-        <!-- ✅ STANDARDIZED: Session-based error display -->
         <?php if (isset($_SESSION['error_message'])): ?>
             <div class="alert alert-danger alert-dismissible fade show" role="alert">
                 <?= htmlspecialchars($_SESSION['error_message']) ?><button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
@@ -121,9 +122,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             <div class="mb-3 input-group-icon">
                 <label for="plate_number" class="form-label">Plate Number</label>
-                <input type="text" class="form-control" id="plate_number" name="plate_number" value="<?= htmlspecialchars($plate_number ?? '') ?>" required style="text-transform: uppercase;">
+                <input type="text" class="form-control" id="plate_number" name="plate_number" value="<?= htmlspecialchars($plate ?? '') ?>" required style="text-transform: uppercase;">
                 <i class="input-icon fas fa-hashtag"></i>
                 <?php if (isset($errors['plate_number'])): ?><div class="text-danger"><?= htmlspecialchars($errors['plate_number']) ?></div><?php endif; ?>
+            </div>
+            <div class="mb-3">
+                <label for="driver_name" class="form-label">Assigned Driver (Optional)</label>
+                <select class="form-select" id="driver_name" name="driver_name">
+                    <option value="">Select Driver</option>
+                    <?php foreach ($drivers as $d): ?>
+                        <option value="<?= htmlspecialchars($d['name']) ?>" <?= ($driver === $d['name']) ? 'selected' : '' ?>><?= htmlspecialchars($d['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <?php if (isset($errors['driver_name'])): ?><div class="text-danger"><?= htmlspecialchars($errors['driver_name']) ?></div><?php endif; ?>
             </div>
             <div class="mb-3 input-group-icon">
                 <label for="make" class="form-label">Make</label>
@@ -171,41 +182,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }, 5000); // 5000 milliseconds = 5 seconds
     });
-    
-    // Basic client-side validation
-    var form = document.querySelector('form');
-    form.addEventListener('submit', function(e) {
-        var plate = document.getElementById('plate_number').value.toUpperCase().trim();
-        var make = document.getElementById('make').value.trim();
-        var model = document.getElementById('model').value.trim();
-        var type = document.getElementById('type').value.trim();
-        
-        // Basic validation
-        if (plate === '') {
-            e.preventDefault();
-            alert('Please enter a plate number.');
-            return false;
-        }
-        
-        if (make === '') {
-            e.preventDefault();
-            alert('Please enter a make.');
-            return false;
-        }
-        
-        if (model === '') {
-            e.preventDefault();
-            alert('Please enter a model.');
-            return false;
-        }
-        
-        if (type === '') {
-            e.preventDefault();
-            alert('Please enter a type.');
-            return false;
-        }
-    });
-
 });
 </script>
 </body>

@@ -1,110 +1,110 @@
 <?php
 require_once __DIR__ . '/../includes/session.php';
 require_once __DIR__ . '/../db.php';
+require_once __DIR__ . '/edit_entry.php'; // Include the generic edit utility
 
-// ✅ STANDARDIZED: Use helper function instead of manual check
 require_role('admin', '../login.php');
 
-// ✅ STANDARDIZED: Initialize errors array for consistent error handling
 $errors = [];
+$vehicle = []; // Initialize to prevent errors if not fetched
 
-// ✅ STANDARDIZED: Validate ID as an integer
-$id = $_GET['id'] ?? null;
-if (!filter_var($id, FILTER_VALIDATE_INT)) {
-    $_SESSION['error'] = "Invalid vehicle ID.";
-    header("Location: ../dashboardX.php");
-    exit();
-}
-
-// ✅ STANDARDIZED: Fetch the current vehicle data
-try {
-    $stmt = $pdo->prepare("SELECT * FROM vehicles WHERE id = ?");
-    $stmt->execute([$id]);
-    $vehicle = $stmt->fetch(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    error_log("Edit Vehicle Select PDO Error: " . $e->getMessage());
-    $_SESSION['error'] = "An unexpected error occurred while fetching vehicle data.";
-    header("Location: ../dashboardX.php");
-    exit();
-}
-
-if (!$vehicle) {
-    $_SESSION['error'] = "Vehicle not found.";
-    header("Location: ../dashboardX.php");
-    exit();
-}
-
-// ✅ STANDARDIZED: Fetch drivers for dropdown
+// Fetch drivers for dropdown
 $drivers = [];
 try {
     $drivers = $pdo->query("SELECT name FROM drivers ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     error_log("Driver Fetch Error: " . $e->getMessage());
+    $errors[] = "Could not load drivers list.";
 }
 
-// ✅ STANDARDIZED: Handle form submission
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // ✅ ADDED: CSRF protection
-    validate_csrf_token_post('edit_vehicle.php');
+// Conditional update function for vehicles
+$conditionalVehicleUpdate = function(PDO $pdo, int $id, array $data, array $currentEntry, array $fields, string $successMessage, string $redirectLocation, array $optionalData) {
+    $currentErrors = [];
     
-    // ✅ STANDARDIZED: Consistent input sanitization pattern
-    $plate = htmlspecialchars(trim($_POST['plate_number'] ?? ''));
-    $driver_name = !empty($_POST['driver_name']) ? trim($_POST['driver_name']) : null;
-    $make = htmlspecialchars(trim($_POST['make'] ?? ''));
-    $model = htmlspecialchars(trim($_POST['model'] ?? ''));
-    $type = htmlspecialchars(trim($_POST['type'] ?? ''));
-    $status = $_POST['status'] ?? '';
-
-    // Input validation - collect all errors
-    if (empty($plate)) $errors[] = "Plate number is required.";
-    if (empty($make)) $errors[] = "Make is required.";
-    if (empty($model)) $errors[] = "Model is required.";
-    if (empty($type)) $errors[] = "Type is required.";
-    
-    // Validate status input
-    $allowed_statuses = ['available', 'assigned', 'returning', 'maintenance'];
-    if (!in_array($status, $allowed_statuses)) {
-        $errors[] = "Invalid vehicle status.";
-    }
-
-    // Check if driver is already assigned to another vehicle
-    if ($driver_name) {
-        try {
-            $stmt = $pdo->prepare("SELECT id FROM vehicles WHERE driver_name = ? AND id != ?");
-            $stmt->execute([$driver_name, $id]);
-            if ($stmt->fetch()) {
-                $errors[] = "This driver is already assigned to another vehicle.";
-            }
-        } catch (PDOException $e) {
-            error_log("Driver Check Error: " . $e->getMessage());
-            $errors[] = "Error checking driver assignment.";
+    // Check if driver is already assigned to another vehicle, if a driver is selected and it's a new driver
+    if (!empty($data['driver_name']) && ($data['driver_name'] !== ($currentEntry['driver_name'] ?? null))) {
+        $checkStmt = $pdo->prepare("SELECT id FROM vehicles WHERE driver_name = ? AND id != ?");
+        $checkStmt->execute([$data['driver_name'], $id]);
+        if ($checkStmt->fetch()) {
+            $currentErrors[] = "This driver is already assigned to another vehicle.";
+            return ['success' => false, 'errors' => $currentErrors];
         }
     }
 
-    // ✅ STANDARDIZED: Handle errors consistently
-    if (!empty($errors)) {
-        // Don't redirect on validation errors - stay on page to show form with retained values
-    } else {
-        try {
-            $update = $pdo->prepare("UPDATE vehicles 
-                                     SET plate_number = ?, driver_name = ?, make = ?, model = ?, type = ?, status = ? 
-                                     WHERE id = ?");
-            $result = $update->execute([$plate, $driver_name, $make, $model, $type, $status, $id]);
-            
-            if ($result) {
-                $_SESSION['success'] = "Vehicle updated successfully.";
-                header("Location: ../dashboardX.php");
-                exit();
-            } else {
-                $errors[] = "Failed to update vehicle. Please try again.";
+    // Proceed with the update if no new errors
+    if (empty($currentErrors)) {
+        $updateFields = [];
+        $updateData = [];
+
+        foreach ($fields as $dbColumn => $postKey) {
+            if ($dbColumn !== 'id' && ($data[$dbColumn] !== ($currentEntry[$dbColumn] ?? null))) {
+                $updateFields[] = "{$dbColumn} = :{$dbColumn}";
+                $updateData[$dbColumn] = $data[$dbColumn];
             }
-        } catch (PDOException $e) {
-            // ✅ STANDARDIZED: Consistent error logging pattern
-            error_log("Edit Vehicle Update PDO Error: " . $e->getMessage());
-            $errors[] = "An unexpected error occurred while updating the vehicle.";
+        }
+
+        // Special handling for status if it's explicitly part of the form and changed
+        if (isset($_POST['status']) && ($_POST['status'] !== ($currentEntry['status'] ?? null))) {
+            $allowed_statuses = ['available', 'assigned', 'returning', 'maintenance'];
+            if (!in_array($_POST['status'], $allowed_statuses)) {
+                $currentErrors[] = "Invalid vehicle status.";
+                return ['success' => false, 'errors' => $currentErrors];
+            }
+            $updateFields[] = "status = :status";
+            $updateData['status'] = $_POST['status'];
+        }
+
+        if (empty($updateFields)) {
+            $_SESSION['warning_message'] = "No changes detected for this entry.";
+            header("Location: " . $redirectLocation);
+            exit();
+        }
+
+        $stmt = $pdo->prepare("UPDATE vehicles SET " . implode(', ', $updateFields) . " WHERE id = :id");
+        $updateData['id'] = $id;
+        $result = $stmt->execute($updateData);
+
+        if ($result) {
+            $_SESSION['success_message'] = sprintf($successMessage, $data['plate_number']);
+            header("Location: " . $redirectLocation);
+            exit();
+        } else {
+            $currentErrors[] = "Failed to update vehicle. Please try again.";
+            return ['success' => false, 'errors' => $currentErrors];
         }
     }
+    return ['success' => false, 'errors' => $currentErrors];
+};
+
+$editResult = handle_edit_entry(
+    $pdo,
+    'vehicles',
+    ['plate_number' => 'plate_number', 'driver_name' => 'driver_name', 'make' => 'make', 'model' => 'model', 'type' => 'type'],
+    ['plate_number' => 'required', 'make' => 'required', 'model' => 'required', 'type' => 'required'],
+    ['plate_number' => 'Plate number'],
+    "Vehicle '%s' updated successfully.",
+    "../dashboardX.php",
+    [
+        'fetch_sql' => "SELECT * FROM vehicles WHERE id = :id",
+        'conditional_update' => $conditionalVehicleUpdate,
+        'id_field' => 'id' // Specify ID field if different from default 'id'
+    ]
+);
+
+if (!$editResult['success']) {
+    $errors = array_merge($errors, $editResult['errors']);
+} else {
+    $vehicle = $editResult['current_entry'];
 }
+
+// Pre-fill form values for display
+$plate = $_POST['plate_number'] ?? ($vehicle['plate_number'] ?? '');
+$driver_name = $_POST['driver_name'] ?? ($vehicle['driver_name'] ?? null);
+$make = $_POST['make'] ?? ($vehicle['make'] ?? '');
+$model = $_POST['model'] ?? ($vehicle['model'] ?? '');
+$type = $_POST['type'] ?? ($vehicle['type'] ?? '');
+$status = $_POST['status'] ?? ($vehicle['status'] ?? 'available');
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -123,11 +123,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <div class="d-flex justify-content-center align-items-center vh-100 bg-light">
     <div class="simple-form-page-container">
                     <div class="text-center mb-4">
-                        <h2 class="mb-4">Edit Vehicle: <?= htmlspecialchars($vehicle['plate_number']) ?></h2>
+                        <h2 class="mb-4">Edit Vehicle: <?= htmlspecialchars($vehicle['plate_number'] ?? '') ?></h2>
                         <p class="mb-4">Update the information for this vehicle.</p>
                     </div>
 
-                    <!-- ✅ STANDARDIZED: Consistent error display pattern -->
                     <?php if (!empty($errors)): ?>
                         <div class="alert alert-danger alert-dismissible fade show" role="alert">
                             <?php foreach ($errors as $error): ?>
@@ -137,57 +136,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     <?php endif; ?>
 
-                    <!-- ✅ STANDARDIZED: Session-based error display -->
-                    <?php if (isset($_SESSION['error'])): ?>
+                    <?php if (isset($_SESSION['error_message'])): ?>
                         <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                            <?= htmlspecialchars($_SESSION['error']) ?><button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            <?= htmlspecialchars($_SESSION['error_message']) ?><button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                         </div>
-                        <?php unset($_SESSION['error']); ?>
+                        <?php unset($_SESSION['error_message']); ?>
                     <?php endif; ?>
 
-                    <?php if (isset($_SESSION['success'])): ?>
+                    <?php if (isset($_SESSION['success_message'])): ?>
                         <div class="alert alert-success alert-dismissible fade show" role="alert">
-                            <?= htmlspecialchars($_SESSION['success']) ?><button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            <?= htmlspecialchars($_SESSION['success_message']) ?><button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                         </div>
-                        <?php unset($_SESSION['success']); ?>
+                        <?php unset($_SESSION['success_message']); ?>
                     <?php endif; ?>
 
-                    <form action="edit_vehicle.php?id=<?= $vehicle['id'] ?>" method="POST">
+                    <form action="edit_vehicle.php?id=<?= $vehicle['id'] ?? '' ?>" method="POST">
                         <?= csrf_field() ?>
                         <div class="mb-3 input-group-icon d-flex">
                             <div class="col-6">
                                 <label for="plate_number" class="form-label">Plate Number</label>
-                                <input type="text" class="form-control" id="plate_number" name="plate_number" value="<?= htmlspecialchars($plate_number ?? $vehicle['plate_number']) ?>" required>
+                                <input type="text" class="form-control" id="plate_number" name="plate_number" value="<?= htmlspecialchars($plate) ?>" required>
                                 <i class="input-icon fas fa-hashtag"></i>
                                 <?php if (isset($errors['plate_number'])): ?><div class="text-danger"><?= htmlspecialchars($errors['plate_number']) ?></div><?php endif; ?>
                             </div>
                             <div class="col-6">
                             <label for="status" class="form-label">Status:</label>
-                            <?php $selected_status = $_POST['status'] ?? $vehicle['status'] ?? 'available'; ?>
                             <select name="status" id="status" class="form-select" required>
-                                <option value="available" <?= $selected_status === 'available' ? 'selected' : '' ?>>Available</option>
-                                <option value="assigned" <?= $selected_status === 'assigned' ? 'selected' : '' ?>>Assigned</option>
-                                <option value="returning" <?= $selected_status === 'returning' ? 'selected' : '' ?>>Pending return</option>
-                                <option value="maintenance" <?= $selected_status === 'maintenance' ? 'selected' : '' ?>>Maintenance</option>
+                                <option value="available" <?= $status === 'available' ? 'selected' : '' ?>>Available</option>
+                                <option value="assigned" <?= $status === 'assigned' ? 'selected' : '' ?>>Assigned</option>
+                                <option value="returning" <?= $status === 'returning' ? 'selected' : '' ?>>Pending return</option>
+                                <option value="maintenance" <?= $status === 'maintenance' ? 'selected' : '' ?>>Maintenance</option>
                             </select>
                             <?php if (isset($errors['status'])): ?><div class="text-danger"><?= htmlspecialchars($errors['status']) ?></div><?php endif; ?>
                             </div>
                         </div>
                         <div class="mb-3 input-group-icon">
+                            <label for="driver_name" class="form-label">Assigned Driver (Optional)</label>
+                            <select class="form-select" id="driver_name" name="driver_name">
+                                <option value="">Select Driver</option>
+                                <?php foreach ($drivers as $d): ?>
+                                    <option value="<?= htmlspecialchars($d['name']) ?>" <?= ($driver_name === $d['name']) ? 'selected' : '' ?>><?= htmlspecialchars($d['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <?php if (isset($errors['driver_name'])): ?><div class="text-danger"><?= htmlspecialchars($errors['driver_name']) ?></div><?php endif; ?>
+                        </div>
+                        <div class="mb-3 input-group-icon">
                             <label for="make" class="form-label">Make:</label>
-                            <input type="text" class="form-control" id="make" name="make" value="<?= htmlspecialchars($make ?? $vehicle['make']) ?>" required>
+                            <input type="text" class="form-control" id="make" name="make" value="<?= htmlspecialchars($make) ?>" required>
                             <i class="input-icon fas fa-car-side"></i>
                             <?php if (isset($errors['make'])): ?><div class="text-danger"><?= htmlspecialchars($errors['make']) ?></div><?php endif; ?>
                         </div>
                         <div class="mb-3 input-group-icon">
                             <label for="model" class="form-label">Model:</label>
-                            <input type="text" class="form-control" id="model" name="model" value="<?= htmlspecialchars($model ?? $vehicle['model']) ?>" required>
+                            <input type="text" class="form-control" id="model" name="model" value="<?= htmlspecialchars($model) ?>" required>
                             <i class="input-icon fas fa-car"></i>
                             <?php if (isset($errors['model'])): ?><div class="text-danger"><?= htmlspecialchars($errors['model']) ?></div><?php endif; ?>
                         </div>
                         <div class="mb-3 input-group-icon">
                             <label for="type" class="form-label">Type:</label>
-                            <input type="text" class="form-control" id="type" name="type" value="<?= htmlspecialchars($type ?? $vehicle['type']) ?>" required>
+                            <input type="text" class="form-control" id="type" name="type" value="<?= htmlspecialchars($type) ?>" required>
                             <i class="input-icon fas fa-truck"></i>
                             <?php if (isset($errors['type'])): ?><div class="text-danger"><?= htmlspecialchars($errors['type']) ?></div><?php endif; ?>
                         </div>
@@ -219,41 +226,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }, 5000); // 5000 milliseconds = 5 seconds
     });
-    
-    // Basic client-side validation
-    var form = document.querySelector('form');
-    form.addEventListener('submit', function(e) {
-        var plate = document.getElementById('plate_number').value.trim();
-        var make = document.getElementById('make').value.trim();
-        var model = document.getElementById('model').value.trim();
-        var type = document.getElementById('type').value.trim();
-        
-        // Basic validation
-        if (plate === '') {
-            e.preventDefault();
-            alert('Please enter a plate number.');
-            return false;
-        }
-        
-        if (make === '') {
-            e.preventDefault();
-            alert('Please enter a make.');
-            return false;
-        }
-        
-        if (model === '') {
-            e.preventDefault();
-            alert('Please enter a model.');
-            return false;
-        }
-        
-        if (type === '') {
-            e.preventDefault();
-            alert('Please enter a type.');
-            return false;
-        }
-    });
-
 });
 </script>
 </body>

@@ -44,18 +44,6 @@ try {
     error_log("Stats Error: " . $e->getMessage(), 0);
 }
 
-function getStatusTextDispatch($status) {
-    $map = [
-        'pending_dispatch_assignment' => 'Awaiting Dispatch',
-        'pending_admin_approval' => 'Awaiting Admin Approval',
-        'approved' => 'Approved',
-        'rejected_new_request' => 'Rejected (New Request)',
-        'rejected_reassign_dispatch' => 'Rejected (Reassign Dispatch)',
-        'rejected' => 'Rejected',
-        'cancelled' => 'Cancelled',
-    ];
-    return $map[$status] ?? ucfirst(str_replace('_', ' ', $status));
-}
 
 $calendarEvents = [];
 $calendarRequestDetails = [];

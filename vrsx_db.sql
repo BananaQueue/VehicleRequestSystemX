@@ -63,22 +63,50 @@ CREATE TABLE `requests` (
   `destination` varchar(255) NOT NULL,
   `purpose` text NOT NULL,
   `request_date` datetime DEFAULT current_timestamp(),
-  `status` enum('pending_dispatch_assignment','pending_admin_approval','approved','rejected_new_request','rejected_reassign_dispatch','rejected') DEFAULT 'pending_dispatch_assignment',
-  `assigned_vehicle_id` int(11) DEFAULT NULL,
-  `assigned_driver_id` int(11) DEFAULT NULL,
+  `status` enum(
+    'pending_dispatch_assignment',
+    'pending_admin_approval',
+    'approved',
+    'rejected_new_request',
+    'rejected_reassign_dispatch',
+    'rejected',
+    'cancelled',
+    'concluded'
+  ) DEFAULT 'pending_dispatch_assignment',
   `rejection_reason` varchar(255) DEFAULT NULL,
-  `travel_date` date DEFAULT NULL,
+  `departure_date` DATE NULL,
+  `return_date` DATE NULL,
   `passenger_count` int(11) DEFAULT 0,
-  `passenger_names` text DEFAULT NULL
+  `passenger_names` text DEFAULT NULL,
+  `assigned_vehicle_id` int(11) DEFAULT NULL,
+  `assigned_driver_id` int(11) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Dumping data for table `requests`
 --
 
-INSERT INTO `requests` (`id`, `user_id`, `requestor_name`, `requestor_email`, `destination`, `purpose`, `request_date`, `status`, `assigned_vehicle_id`, `assigned_driver_id`, `rejection_reason`, `travel_date`, `passenger_count`, `passenger_names`) VALUES
-(1, 2, 'Rocco', 'rocco@example.com', 'Baguio City', 'Strategic Plan Formulation and Meeting', '2025-08-20 12:01:12', 'approved', NULL, 1, NULL, NULL, 0, NULL),
-(2, 2, 'Rocco', 'rocco@example.com', 'Baguio City', 'Meeting', '2025-08-20 13:30:02', 'approved', NULL, 1, NULL, NULL, 0, NULL);
+INSERT INTO `requests` (`id`, `user_id`, `requestor_name`, `requestor_email`, `destination`, `purpose`, `request_date`, `status`, `assigned_vehicle_id`, `assigned_driver_id`, `rejection_reason`, `departure_date`, `return_date`, `passenger_count`, `passenger_names`) VALUES
+(1, 2, 'Rocco', 'rocco@example.com', 'Baguio City', 'Strategic Plan Formulation and Meeting', '2025-08-20 12:01:12', 'approved', NULL, 1, NULL, NULL, NULL, 0, NULL),
+(2, 2, 'Rocco', 'rocco@example.com', 'Baguio City', 'Meeting', '2025-08-20 13:30:02', 'approved', NULL, 1, NULL, NULL, NULL, 0, NULL);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `request_audit_logs`
+--
+
+CREATE TABLE `request_audit_logs` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `request_id` INT NOT NULL,
+  `action` VARCHAR(100) NOT NULL,
+  `actor_id` INT NULL,
+  `actor_role` VARCHAR(50) NULL,
+  `actor_name` VARCHAR(255) NULL,
+  `notes` TEXT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`request_id`) REFERENCES `requests`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
 
@@ -163,6 +191,12 @@ ALTER TABLE `requests`
   ADD KEY `idx_request_status` (`status`);
 
 --
+-- Indexes for table `request_audit_logs`
+--
+CREATE INDEX idx_request_audit_request_id ON request_audit_logs (request_id);
+
+
+--
 -- Indexes for table `users`
 --
 ALTER TABLE `users`
@@ -191,6 +225,12 @@ ALTER TABLE `drivers`
 --
 ALTER TABLE `requests`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `request_audit_logs`
+--
+ALTER TABLE `request_audit_logs`
+  MODIFY `id` INT AUTO_INCREMENT, AUTO_INCREMENT=1; -- Assuming audit logs start from 1
 
 --
 -- AUTO_INCREMENT for table `users`

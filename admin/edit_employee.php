@@ -1,90 +1,34 @@
 <?php
-// session_name("site3_session"); // Handled in session.php
 require_once __DIR__ . '/../includes/session.php';
 require '../db.php';
+require_once __DIR__ . '/edit_entry.php'; // Include the generic edit utility
 
-// ✅ STANDARDIZED: Use helper function instead of manual check
 require_role('admin', '../login.php');
 
-// ✅ STANDARDIZED: Initialize errors array for consistent error handling
 $errors = [];
+$employee = []; // Initialize to prevent errors if not fetched
 
-// ✅ STANDARDIZED: Validate ID as an integer
-$id = $_GET['id'] ?? null;
-if (!filter_var($id, FILTER_VALIDATE_INT)) {
-    $_SESSION['error'] = "Invalid employee ID.";
-    header("Location: ../dashboardX.php");
-    exit();
+$editResult = handle_edit_entry(
+    $pdo,
+    'users',
+    ['name' => 'name', 'email' => 'email', 'position' => 'position'],
+    ['name' => 'required', 'email' => 'required|email', 'position' => 'required'],
+    ['email' => 'Email'],
+    "Employee '%s' updated successfully.",
+    "../dashboardX.php#employeeManagement",
+    ['fetch_sql' => "SELECT * FROM users WHERE id = :id AND role IN ('employee', 'dispatch')"]
+);
+
+if (!$editResult['success']) {
+    $errors = $editResult['errors'];
+} else {
+    $employee = $editResult['current_entry'];
 }
 
-// ✅ STANDARDIZED: Fetch current employee data
-try {
-    $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ? AND role = 'employee'");
-    $stmt->execute([$id]);
-    $employee = $stmt->fetch(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    error_log("Edit Employee Select Error: " . $e->getMessage());
-    $_SESSION['error'] = "Error fetching employee data.";
-    header("Location: ../dashboardX.php");
-    exit();
-}
+$name = $_POST['name'] ?? ($employee['name'] ?? '');
+$email = $_POST['email'] ?? ($employee['email'] ?? '');
+$position = $_POST['position'] ?? ($employee['position'] ?? '');
 
-if (!$employee) {
-    $_SESSION['error'] = "Employee not found.";
-    header("Location: ../dashboardX.php");
-    exit();
-}
-
-// ✅ STANDARDIZED: Handle POST request
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // ✅ STANDARDIZED: Use helper function for CSRF validation
-    validate_csrf_token_post('edit_employee.php');
-
-    // ✅ STANDARDIZED: Consistent input sanitization
-    $name = htmlspecialchars(trim($_POST['name'] ?? ''));
-    $email = htmlspecialchars(trim($_POST['email'] ?? ''));
-    $position = htmlspecialchars(trim($_POST['position'] ?? ''));
-
-    // Input validation - collect all errors
-    if (empty($name)) $errors[] = "Name is required.";
-    if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = "Valid email is required.";
-    if (empty($position)) $errors[] = "Position is required.";
-
-    // Check if email already exists for other employees
-    if (!empty($email)) {
-        try {
-            $checkStmt = $pdo->prepare("SELECT id FROM users WHERE email = ? AND id != ?");
-            $checkStmt->execute([$email, $id]);
-            if ($checkStmt->fetch()) {
-                $errors[] = "Email already exists for another user.";
-            }
-        } catch (PDOException $e) {
-            error_log("Email Check Error: " . $e->getMessage());
-            $errors[] = "Error checking email uniqueness.";
-        }
-    }
-
-    // ✅ STANDARDIZED: Handle errors consistently
-    if (!empty($errors)) {
-        // Don't redirect on validation errors - stay on page to show form with retained values
-    } else {
-        try {
-            $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, position = ? WHERE id = ?");
-            $result = $stmt->execute([$name, $email, $position, $id]);
-
-            if ($result) {
-                $_SESSION['success'] = "Employee updated successfully.";
-                header("Location: ../dashboardX.php#employeeManagement");
-                exit();
-            } else {
-                $errors[] = "Failed to update employee. Please try again.";
-            }
-        } catch (PDOException $e) {
-            error_log("Edit Employee Update Error: " . $e->getMessage());
-            $errors[] = "An unexpected error occurred while updating the employee.";
-        }
-    }
-}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -104,11 +48,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <div class="d-flex justify-content-center align-items-center vh-100 bg-light">
     <div class="simple-form-page-container">
                 <div class="text-center mb-4">
-                    <h2 class="mb-4">Edit Employee: <?= htmlspecialchars($employee['name']) ?></h2>
+                    <h2 class="mb-4">Edit Employee: <?= htmlspecialchars($employee['name'] ?? '') ?></h2>
                     <p class="mb-4">Update the information for this employee account.</p>
                 </div>
             
-                <!-- ✅ STANDARDIZED: Consistent error display pattern -->
                 <?php if (!empty($errors)): ?>
                     <div class="alert alert-danger alert-dismissible fade show" role="alert">
                         <?php foreach ($errors as $error): ?>
@@ -118,44 +61,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 <?php endif; ?>
 
-                <!-- ✅ STANDARDIZED: Session-based error/success display -->
-                <?php if (isset($_SESSION['error'])): ?>
+                <?php if (isset($_SESSION['error_message'])): ?>
                     <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                        <?= htmlspecialchars($_SESSION['error']) ?><button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        <?= htmlspecialchars($_SESSION['error_message']) ?><button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                     </div>
-                    <?php unset($_SESSION['error']); ?>
+                    <?php unset($_SESSION['error_message']); ?>
                 <?php endif; ?>
 
-                <?php if (isset($_SESSION['success'])): ?>
+                <?php if (isset($_SESSION['success_message'])): ?>
                     <div class="alert alert-success alert-dismissible fade show" role="alert">
-                        <?= htmlspecialchars($_SESSION['success']) ?><button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        <?= htmlspecialchars($_SESSION['success_message']) ?><button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                     </div>
-                    <?php unset($_SESSION['success']); ?>
+                    <?php unset($_SESSION['success_message']); ?>
                 <?php endif; ?>
 
                 <form method="POST" novalidate>
-                    <!-- ✅ STANDARDIZED: Use helper function -->
                     <?= csrf_field() ?>
 
                     <div class="mb-3 input-group-icon">
                         <label for="name" class="form-label">Employee Name</label>
-                        <input type="text" class="form-control" id="name" name="name" value="<?= htmlspecialchars($_POST['name'] ?? $employee['name']) ?>" required>
+                        <input type="text" class="form-control" id="name" name="name" value="<?= htmlspecialchars($name) ?>" required>
                         <i class="input-icon fas fa-user"></i>
-                        <?php if (isset($errors['name'])): ?><div class="text-danger"><?= $errors['name'] ?></div><?php endif; ?>
+                        <?php if (isset($errors['name'])): ?><div class="text-danger"><?= htmlspecialchars($errors['name']) ?></div><?php endif; ?>
                     </div>
                 
                     <div class="mb-3 input-group-icon">
                         <label for="email" class="form-label">Email</label>
-                        <input type="email" class="form-control" id="email" name="email" value="<?= htmlspecialchars($_POST['email'] ?? $employee['email']) ?>" required>
+                        <input type="email" class="form-control" id="email" name="email" value="<?= htmlspecialchars($email) ?>" required>
                         <i class="input-icon fas fa-envelope"></i>
-                        <?php if (isset($errors['email'])): ?><div class="text-danger"><?= $errors['email'] ?></div><?php endif; ?>
+                        <?php if (isset($errors['email'])): ?><div class="text-danger"><?= htmlspecialchars($errors['email']) ?></div><?php endif; ?>
                     </div>
                 
                     <div class="mb-4 input-group-icon">
                         <label for="position" class="form-label">Position</label>
-                        <input type="text" class="form-control" id="position" name="position" value="<?= htmlspecialchars($_POST['position'] ?? $employee['position']) ?>" required>
+                        <input type="text" class="form-control" id="position" name="position" value="<?= htmlspecialchars($position) ?>" required>
                         <i class="input-icon fas fa-briefcase"></i>
-                        <?php if (isset($errors['position'])): ?><div class="text-danger"><?= $errors['position'] ?></div><?php endif; ?>
+                        <?php if (isset($errors['position'])): ?><div class="text-danger"><?= htmlspecialchars($errors['position']) ?></div><?php endif; ?>
                     </div>
 
                     <div class="d-grid gap-2 mb-3">
@@ -187,35 +128,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }, 5000); // 5000 milliseconds = 5 seconds
     });
-    
-    // Basic client-side validation
-    var form = document.querySelector('form');
-    form.addEventListener('submit', function(e) {
-        var name = document.getElementById('name').value.trim();
-        var email = document.getElementById('email').value.trim();
-        var position = document.getElementById('position').value.trim();
-        
-        // Basic validation
-        if (name === '') {
-            e.preventDefault();
-            alert('Please enter an employee name.');
-            return false;
-        }
-        
-        if (position === '') {
-            e.preventDefault();
-            alert('Please enter a position.');
-            return false;
-        }
-        
-        var emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            e.preventDefault();
-            alert('Please enter a valid email address.');
-            return false;
-        }
-    });
-
 });
 </script>
 </body>

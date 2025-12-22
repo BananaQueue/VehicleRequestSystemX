@@ -1,88 +1,86 @@
 <?php
-// session_name("site3_session"); // Handled in session.php
 require_once __DIR__ . '/../includes/session.php';
 require '../db.php';
+require_once __DIR__ . '/add_entry.php'; // Include the generic add utility
 
-// ✅ STANDARDIZED: Use helper function instead of manual check
 require_role('admin', '../login.php');
 
-// ✅ STANDARDIZED: Initialize errors array for consistent error handling
 $errors = [];
+$username = $_POST['name'] ?? '';
+$email = $_POST['email'] ?? '';
+$position = $_POST['position'] ?? '';
+$role = $_POST['role'] ?? 'employee';
+$password = $_POST['password'] ?? '';
+$phone = $_POST['phone'] ?? '';
+
+// Conditional insert function for employee/driver
+$conditionalEmployeeInsert = function(PDO $pdo, array $data, array $fields, string $successMessage, string $redirectLocation, array $optionalData) use ($password, $role) {
+    $currentErrors = [];
+    try {
+        if ($role === 'driver') {
+            // Insert into drivers table with default status 'available'
+            $stmt = $pdo->prepare("INSERT INTO drivers (name, email, phone, position, status) VALUES (?, ?, ?, ?, 'available')");
+            $result = $stmt->execute([$data['name'], $data['email'], $data['phone'], $role]);
+        } else {
+            // Insert into users table
+            $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+            $stmt = $pdo->prepare("INSERT INTO users (name, email, position, password, role) VALUES (?, ?, ?, ?, ?)");
+            $result = $stmt->execute([$data['name'], $data['email'], $data['position'], $hashed_password, $role]);
+        }
+
+        if ($result) {
+            $roleText = ucfirst($role);
+            $_SESSION['success_message'] = "{$roleText} '{$data['name']}' added successfully.";
+            
+            // Redirect to appropriate tab
+            if ($role === 'driver') {
+                header("Location: ../dashboardX.php#driverManagement");
+            } else {
+                header("Location: ../dashboardX.php#employeeManagement");
+            }
+            exit();
+        } else {
+            $currentErrors[] = "Failed to add {$role}. Please try again.";
+            return ['success' => false, 'errors' => $currentErrors];
+        }
+    } catch (PDOException $e) {
+        error_log("Add Employee/Driver PDO Error: " . $e->getMessage());
+        $currentErrors[] = "An unexpected error occurred while adding the {$role}.";
+        return ['success' => false, 'errors' => $currentErrors];
+    }
+};
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // ✅ STANDARDIZED: Use helper function instead of manual validation
-    validate_csrf_token_post('add_employee.php');
-    
-    // ✅ STANDARDIZED: Consistent input sanitization pattern
-    $username = htmlspecialchars(trim($_POST['name'] ?? ''));
-    $email = htmlspecialchars(trim($_POST['email'] ?? ''));
-    $position = htmlspecialchars(trim($_POST['position'] ?? ''));
-    $role = htmlspecialchars(trim($_POST['role'] ?? 'employee'));
-    $password = $_POST['password'] ?? '';
-    $phone = htmlspecialchars(trim($_POST['phone'] ?? ''));
+    $validationRules = [
+        'role' => 'required',
+        'name' => 'required',
+        'email' => 'required|email',
+    ];
 
-    // Input validation - collect all errors
-    if (empty($username)) $errors[] = "Name is required.";
-    if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = "Valid email is required.";
-    if (empty($position)) $errors[] = "Position is required.";
-    if (!in_array($role, ['employee', 'dispatch', 'driver'])) $errors[] = "Invalid role selected.";
-    
-    // Role-specific validation
+    // Conditional validation for password and phone
     if ($role === 'driver') {
-        // Driver doesn't need password but needs phone
-        if (empty($phone)) $errors[] = "Phone number is required for drivers.";
+        $validationRules['phone'] = 'required';
     } else {
-        // Employee and dispatch need password
-        if (empty($password) || strlen($password) < 8) $errors[] = "Password must be at least 8 characters.";
+        $validationRules['password'] = 'required|min_length:8';
+        $validationRules['position'] = 'required';
     }
 
-    // ✅ STANDARDIZED: Handle errors consistently
-    if (!empty($errors)) {
-        // Don't redirect on validation errors - stay on page to show form with retained values
-    } else {
-        try {
-            // Check for duplicate email in appropriate table
-            if ($role === 'driver') {
-                $checkStmt = $pdo->prepare("SELECT id FROM drivers WHERE email = ?");
-            } else {
-                $checkStmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
-            }
-            $checkStmt->execute([$email]);
-            
-            if ($checkStmt->fetch()) {
-                $errors[] = "Email already exists.";
-            } else {
-                if ($role === 'driver') {
-                    // Insert into drivers table with default status 'available'
-                    $stmt = $pdo->prepare("INSERT INTO drivers (name, email, phone, position, status) VALUES (?, ?, ?, ?, 'available')");
-                    $result = $stmt->execute([$username, $email, $phone, $role]);
-                } else {
-                    // Insert into users table
-                    $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-                    $stmt = $pdo->prepare("INSERT INTO users (name, email, position, password, role) VALUES (?, ?, ?, ?, ?)");
-                    $result = $stmt->execute([$username, $email, $position, $hashed_password, $role]);
-                }
-                
-                if ($result) {
-                    $roleText = ucfirst($role);
-                    $_SESSION['success_message'] = "{$roleText} '{$username}' added successfully.";
-                    
-                    // Redirect to appropriate tab
-                    if ($role === 'driver') {
-                        header("Location: ../dashboardX.php#driverManagement");
-                    } else {
-                        header("Location: ../dashboardX.php#employeeManagement");
-                    }
-                    exit();
-                } else {
-                    $errors[] = "Failed to add {$role}. Please try again.";
-                }
-            }
-        } catch (PDOException $e) {
-            // ✅ STANDARDIZED: Consistent error logging pattern
-            error_log("Add Employee/Driver PDO Error: " . $e->getMessage());
-            $errors[] = "An unexpected error occurred while adding the {$role}.";
-        }
+    $result = handle_add_entry(
+        $pdo,
+        '',
+        ['name' => 'name', 'email' => 'email', 'position' => 'position', 'phone' => 'phone', 'role' => 'role', 'password' => 'password'],
+        $validationRules,
+        ['email' => 'Email'],
+        "%s added successfully.",
+        "../dashboardX.php", // This will be overridden by conditional insert
+        [
+            'password_field' => 'password',
+            'conditional_insert' => $conditionalEmployeeInsert
+        ]
+    );
+
+    if (!$result['success']) {
+        $errors = $result['errors'];
     }
 }
 ?>
@@ -107,7 +105,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <p>Fill in the details to add a new employee, dispatch, or driver account.</p>
         </div>
         
-        <!-- ✅ STANDARDIZED: Consistent error display pattern -->
         <?php if (!empty($errors)): ?>
             <div class="alert alert-danger alert-dismissible fade show" role="alert">
                 <?php foreach ($errors as $error): ?>
@@ -117,7 +114,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         <?php endif; ?>
 
-        <!-- ✅ STANDARDIZED: Success message display (for consistency) -->
         <?php if (isset($_SESSION['success_message'])): ?>
             <div class="alert alert-success alert-dismissible fade show" role="alert">
                 <?= $_SESSION['success_message'] ?><button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
@@ -260,65 +256,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }, 5000);
     });
-    
-    // Enhanced client-side validation
-    var form = document.querySelector('form');
-    form.addEventListener('submit', function(e) {
-        var role = roleSelect.value;
-        var name = document.getElementById('name').value.trim();
-        var email = document.getElementById('email').value.trim();
-        var position = document.getElementById('position').value.trim();
-        var password = document.getElementById('password').value;
-        var phone = document.getElementById('phone').value.trim();
-        
-        // Basic validation
-        if (role === '') {
-            e.preventDefault();
-            alert('Please select a role.');
-            return false;
-        }
-        
-        if (name === '') {
-            e.preventDefault();
-            alert('Please enter a name.');
-            return false;
-        }
-        
-        if (position === '') {
-            e.preventDefault();
-            alert('Please enter a position.');
-            return false;
-        }
-        
-        var emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            e.preventDefault();
-            alert('Please enter a valid email address.');
-            return false;
-        }
-        
-        // Role-specific validation
-        if (role === 'driver') {
-            if (phone === '' || phone === '09') {
-                e.preventDefault();
-                alert('Please enter a phone number for the driver.');
-                return false;
-            }
-            var phoneRegex = /^09\d{9}$/;
-            if (!phoneRegex.test(phone)) {
-                e.preventDefault();
-                alert('Please enter a valid Philippine mobile number (09XXXXXXXXX).');
-                return false;
-            }
-        } else {
-            if (password.length < 8) {
-                e.preventDefault();
-                alert('Password must be at least 8 characters long.');
-                return false;
-            }
-        }
-    });
-
 });
 </script>
 </body>
