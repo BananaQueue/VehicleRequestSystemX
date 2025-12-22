@@ -262,8 +262,8 @@ function sync_active_assignments(PDO $pdo): void
             $vehicleUpdate = $pdo->prepare("
                 UPDATE vehicles
                 SET status = 'assigned',
-                    assigned_to = NULL,
-                    driver_name = NULL
+                    assigned_to = :assigned_to,
+                    driver_name = :driver_name
                 WHERE id = :id
             ");
             $vehicleUpdate->execute([
