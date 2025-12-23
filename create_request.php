@@ -66,8 +66,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (empty($errors)) {
+        $pdo->beginTransaction();
         try {
             $passenger_count = count($passenger_names);
+
+            // Remove the new requestor from any existing requests where they are an active passenger
+            $currentDate = date('Y-m-d');
+            $findPassengerRequestsStmt = $pdo->prepare("
+                SELECT id, passenger_names, passenger_count
+                FROM requests
+                WHERE JSON_SEARCH(passenger_names, 'one', ?) IS NOT NULL
+                AND status = 'approved'
+                AND departure_date <= ? AND return_date >= ?
+            ");
+            $findPassengerRequestsStmt->execute([$requestor_name, $currentDate, $currentDate]);
+            $activePassengerRequests = $findPassengerRequestsStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            foreach ($activePassengerRequests as $passengerRequest) {
+                $existingPassengers = json_decode($passengerRequest['passenger_names'], true);
+                $updatedPassengers = array_diff($existingPassengers, [$requestor_name]);
+                $updatedPassengerCount = count($updatedPassengers);
+
+                $updatePassengerStmt = $pdo->prepare("
+                    UPDATE requests
+                    SET passenger_names = ?,
+                        passenger_count = ?
+                    WHERE id = ?
+                ");
+                $updatePassengerStmt->execute([
+                    json_encode(array_values($updatedPassengers)),
+                    $updatedPassengerCount,
+                    $passengerRequest['id']
+                ]);
+            }
+
             $stmt = $pdo->prepare("INSERT INTO requests (user_id, requestor_name, requestor_email, destination, purpose, departure_date, return_date, passenger_count, passenger_names, status) VALUES (:user_id, :requestor_name, :requestor_email, :destination, :purpose, :departure_date, :return_date, :passenger_count, :passenger_names, 'pending_dispatch_assignment')");
             $stmt->execute([
                 ':user_id' => $user_id,
@@ -82,9 +114,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
 
             $_SESSION['success'] = "Vehicle request submitted successfully. Awaiting dispatch assignment.";
+            $pdo->commit();
             header("Location: dashboardX.php");
             exit();
         } catch (PDOException $e) {
+            $pdo->rollBack();
             error_log("Request Submission Error: " . $e->getMessage(), 0);
             $_SESSION['error'] = "An unexpected error occurred. Please try again.";
             header("Location: dashboardX.php");
@@ -213,6 +247,8 @@ $employees = getEmployeeListWithAvailability($pdo);
                             <div id="passenger_suggestions" class="list-group" style="display: none; max-height: 200px; overflow-y: auto;"></div>
                         </div>
                     </div>
+
+                    
                 </div> <!-- Close d-flex -->
                 
                 <div id="selected_passengers" class="mt-3">
