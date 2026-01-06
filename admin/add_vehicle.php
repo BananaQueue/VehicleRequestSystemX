@@ -7,36 +7,18 @@ require_role('admin', '../login.php');
 
 $errors = [];
 $plate = $_POST['plate_number'] ?? '';
-$driver = $_POST['driver_name'] ?? null;
 $make = $_POST['make'] ?? '';
 $model = $_POST['model'] ?? '';
 $type = $_POST['type'] ?? '';
 
-// Fetch drivers for dropdown
-$drivers = [];
-try {
-    $drivers = $pdo->query("SELECT name FROM drivers ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    error_log("Driver Fetch Error: " . $e->getMessage());
-    $errors[] = "Could not load drivers list.";
-}
 
 // Conditional insert function for vehicles
-$conditionalVehicleInsert = function(PDO $pdo, array $data, array $fields, string $successMessage, string $redirectLocation, array $optionalData) use ($driver) {
+$conditionalVehicleInsert = function(PDO $pdo, array $data, array $fields, string $successMessage, string $redirectLocation) {
     $currentErrors = [];
     try {
-        // Check if driver is already assigned to another vehicle, if a driver is selected
-        if (!empty($data['driver_name'])) {
-            $checkStmt = $pdo->prepare("SELECT id FROM vehicles WHERE driver_name = ?");
-            $checkStmt->execute([$data['driver_name']]);
-            if ($checkStmt->fetch()) {
-                $currentErrors[] = "This driver is already assigned to another vehicle.";
-                return ['success' => false, 'errors' => $currentErrors];
-            }
-        }
 
-        $stmt = $pdo->prepare("INSERT INTO vehicles (plate_number, driver_name, make, model, type, status) VALUES (?, ?, ?, ?, ?, 'available')");
-        $result = $stmt->execute([$data['plate_number'], $data['driver_name'], $data['make'], $data['model'], $data['type']]);
+        $stmt = $pdo->prepare("INSERT INTO vehicles (plate_number, make, model, type, status) VALUES (?, ?, ?, ?, 'available')");
+        $result = $stmt->execute([$data['plate_number'], $data['make'], $data['model'], $data['type']]);
         
         if ($result) {
             $_SESSION['success_message'] = "Vehicle '" . $data['plate_number'] . "' added successfully.";
@@ -57,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $result = handle_add_entry(
         $pdo,
         'vehicles',
-        ['plate_number' => 'plate_number', 'driver_name' => 'driver_name', 'make' => 'make', 'model' => 'model', 'type' => 'type'],
+        ['plate_number' => 'plate_number', 'make' => 'make', 'model' => 'model', 'type' => 'type'],
         ['plate_number' => 'required', 'make' => 'required', 'model' => 'required', 'type' => 'required'],
         ['plate_number' => 'Plate number'],
         "Vehicle '%s' added successfully.",
@@ -125,16 +107,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <input type="text" class="form-control" id="plate_number" name="plate_number" value="<?= htmlspecialchars($plate ?? '') ?>" required style="text-transform: uppercase;">
                 <i class="input-icon fas fa-hashtag"></i>
                 <?php if (isset($errors['plate_number'])): ?><div class="text-danger"><?= htmlspecialchars($errors['plate_number']) ?></div><?php endif; ?>
-            </div>
-            <div class="mb-3">
-                <label for="driver_name" class="form-label">Assigned Driver (Optional)</label>
-                <select class="form-select" id="driver_name" name="driver_name">
-                    <option value="">Select Driver</option>
-                    <?php foreach ($drivers as $d): ?>
-                        <option value="<?= htmlspecialchars($d['name']) ?>" <?= ($driver === $d['name']) ? 'selected' : '' ?>><?= htmlspecialchars($d['name']) ?></option>
-                    <?php endforeach; ?>
-                </select>
-                <?php if (isset($errors['driver_name'])): ?><div class="text-danger"><?= htmlspecialchars($errors['driver_name']) ?></div><?php endif; ?>
             </div>
             <div class="mb-3 input-group-icon">
                 <label for="make" class="form-label">Make</label>

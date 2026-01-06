@@ -727,24 +727,24 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
         </header>
 
         <div class="container-fluid px-4">
-            <?php if (isset($_SESSION['success'])): ?>
+            <?php if (isset($_SESSION['success_message'])): ?>
             <div class="alert alert-success alert-dismissible fade show text-success" role="alert">
                 <i class="fas fa-check-circle alert-icon"></i>
-                <?= htmlspecialchars($_SESSION['success']); ?>
+                <?= htmlspecialchars($_SESSION['success_message']); ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
-            <?php unset($_SESSION['success']); ?>
+            <?php unset($_SESSION['success_message']); ?>
             <?php endif; ?>
 
-            <?php if (isset($_SESSION['error'])): ?>
+            <?php if (isset($_SESSION['error_message'])): ?>
             <div class="modern-alert alert-danger alert-dismissible fade show text-danger" role="alert">
             <i class="fas fa-exclamation-triangle alert-icon"></i>
             <div class="alert-content">
-                <strong>Error:</strong> <?= htmlspecialchars($_SESSION['error']); ?>
+                <strong>Error:</strong> <?= htmlspecialchars($_SESSION['error_message']); ?>
             </div>
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
-            <?php unset($_SESSION['error']); ?>
+            <?php unset($_SESSION['error_message']); ?>
             <?php endif; ?>
 
 

@@ -7,7 +7,7 @@ require 'db.php';
 
 // Check if user is logged in and is a dispatch user
 if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'dispatch') {
-    $_SESSION['error'] = "Access denied. You must be logged in as a dispatch user to assign vehicles.";
+    $_SESSION['error_message'] = "Access denied. You must be logged in as a dispatch user to assign vehicles.";
     header("Location: login.php");
     exit();
 }
@@ -17,7 +17,7 @@ $errors = [];
 $success = '';
 
 if ($request_id === false) {
-    $_SESSION['error'] = "Invalid request ID.";
+    $_SESSION['error_message'] = "Invalid request ID.";
     header("Location: dispatch_dashboard.php");
     exit();
 }
@@ -34,7 +34,7 @@ try {
     $request = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$request) {
-        $_SESSION['error'] = "Request not found or not pending dispatch assignment.";
+        $_SESSION['error_message'] = "Request not found or not pending dispatch assignment.";
         header("Location: dispatch_dashboard.php");
         exit();
     }
@@ -42,7 +42,7 @@ try {
     [$requestStartDate, $requestEndDate] = get_request_date_range($request);
 
     if (!$requestStartDate) {
-        $_SESSION['error'] = "Request is missing departure date information. Please update the request before assigning a vehicle.";
+        $_SESSION['error_message'] = "Request is missing departure date information. Please update the request before assigning a vehicle.";
         header("Location: dispatch_dashboard.php");
         exit();
     }
@@ -93,7 +93,7 @@ try {
 
 } catch (PDOException $e) {
     error_log("Assign Vehicle Load Error: " . $e->getMessage(), 0);
-    $_SESSION['error'] = "An unexpected error occurred.";
+    $_SESSION['error_message'] = "An unexpected error occurred.";
     header("Location: dispatch_dashboard.php");
     exit();
 }
@@ -162,7 +162,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['assign_vehicle'])) {
 
             sync_active_assignments($pdo);
 
-            $_SESSION['success'] = "Vehicle assigned successfully to " . htmlspecialchars($request['requestor_name']) . " with driver " . htmlspecialchars($driver_name) . "." . " Forwarding to admin for approval.";
+            $_SESSION['success_message'] = "Vehicle assigned successfully to " . htmlspecialchars($request['requestor_name']) . " with driver " . htmlspecialchars($driver_name) . "." . " Forwarding to admin for approval.";
             header("Location: dispatch_dashboard.php");
             exit();
 

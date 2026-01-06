@@ -5,7 +5,7 @@ require_once __DIR__ . '/includes/passenger_validation.php';
 
 // Check if user is logged in and is an employee
 if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'employee') {
-    $_SESSION['error'] = "Access denied. You must be logged in as an employee to request a vehicle.";
+    $_SESSION['error_message'] = "Access denied. You must be logged in as an employee to request a vehicle.";
     header("Location: login.php");
     exit();
 }
@@ -113,20 +113,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':passenger_names' => json_encode($passenger_names)
             ]);
 
-            $_SESSION['success'] = "Vehicle request submitted successfully. Awaiting dispatch assignment.";
+            $_SESSION['success_message'] = "Vehicle request submitted successfully. Awaiting dispatch assignment.";
             $pdo->commit();
             header("Location: dashboardX.php");
             exit();
         } catch (PDOException $e) {
             $pdo->rollBack();
             error_log("Request Submission Error: " . $e->getMessage(), 0);
-            $_SESSION['error'] = "An unexpected error occurred. Please try again.";
+            $_SESSION['error_message'] = "An unexpected error occurred. Please try again.";
             header("Location: dashboardX.php");
             exit();
         }
     } else {
         // If there are errors, store them in session to display on current page
-        $_SESSION['errors'] = $errors;
+        $_SESSION['errors_message'] = $errors;
         // Also store the POST data to repopulate the form
         $_SESSION['old_post'] = $_POST;
         header("Location: create_request.php");

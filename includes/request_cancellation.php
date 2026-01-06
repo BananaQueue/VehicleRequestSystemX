@@ -61,14 +61,14 @@ function handle_request_cancellation(PDO $pdo, int $requestId, string $cancelRea
 
         sync_active_assignments($pdo);
 
-        $_SESSION['success'] = "Request ID {$requestId} has been cancelled successfully.";
+        $_SESSION['success_message'] = "Request ID {$requestId} has been cancelled successfully.";
         header("Location: " . $redirectSuccess);
         exit;
 
     } catch (Exception $e) {
         $pdo->rollBack();
         error_log("Cancellation Error ({$actorRole}): " . $e->getMessage(), 0);
-        $_SESSION['error'] = 'Failed to cancel request: ' . $e->getMessage();
+        $_SESSION['error_message'] = 'Failed to cancel request: ' . $e->getMessage();
         header("Location: " . $redirectFailure);
         exit;
     }

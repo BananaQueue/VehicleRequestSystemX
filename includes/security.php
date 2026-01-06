@@ -16,21 +16,21 @@
 function validate_csrf_token_post(string $redirect_url = 'dashboardX.php', string $error_message = 'Invalid request. Please try again.') {
     // Check if token exists in POST data
     if (!isset($_POST['csrf_token'])) {
-        $_SESSION['error'] = $error_message;
+        $_SESSION['error_message'] = $error_message;
         header("Location: $redirect_url");
         exit();
     }
     
     // Check if session token exists
     if (empty($_SESSION['csrf_token'])) {
-        $_SESSION['error'] = 'Session expired. Please refresh and try again.';
+        $_SESSION['error_message'] = 'Session expired. Please refresh and try again.';
         header("Location: $redirect_url");
         exit();
     }
     
     // Use hash_equals to prevent timing attacks
     if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
-        $_SESSION['error'] = $error_message;
+        $_SESSION['error_message'] = $error_message;
         header("Location: $redirect_url");
         exit();
     }
@@ -46,13 +46,13 @@ function validate_csrf_token_post(string $redirect_url = 'dashboardX.php', strin
  */
 function validate_csrf_token_get(string $redirect_url = 'dashboardX.php', string $error_message = 'Invalid security token.') {
     if (!isset($_GET['csrf_token']) || empty($_SESSION['csrf_token'])) {
-        $_SESSION['error'] = $error_message;
+        $_SESSION['error_message'] = $error_message;
         header("Location: $redirect_url");
         exit();
     }
     
     if (!hash_equals($_SESSION['csrf_token'], $_GET['csrf_token'])) {
-        $_SESSION['error'] = $error_message;
+        $_SESSION['error_message'] = $error_message;
         header("Location: $redirect_url");
         exit();
     }
@@ -68,7 +68,7 @@ function validate_csrf_token_get(string $redirect_url = 'dashboardX.php', string
  */
 function require_role(string $required_role, string $redirect_url = 'login.php') {
     if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== $required_role) {
-        $_SESSION['error'] = "Access denied. Required role: $required_role";
+        $_SESSION['error_message'] = "Access denied. Required role: $required_role";
         header("Location: $redirect_url");
         exit();
     }

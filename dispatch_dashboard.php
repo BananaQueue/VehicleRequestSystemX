@@ -6,7 +6,7 @@ require 'db.php';
 
 // Check if user is logged in and is a dispatch user
 if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'dispatch') {
-    $_SESSION['error'] = "Access denied. You must be logged in as a dispatch user.";
+    $_SESSION['error_message'] = "Access denied. You must be logged in as a dispatch user.";
     header("Location: login.php");
     exit();
 }
@@ -20,7 +20,7 @@ try {
     $pendingDispatchRequests = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     error_log("Dispatch Dashboard PDO Error: " . $e->getMessage(), 0);
-    $_SESSION['error'] = "An unexpected error occurred while fetching requests.";
+    $_SESSION['error_message'] = "An unexpected error occurred while fetching requests.";
     $pendingDispatchRequests = [];
 }
 
@@ -213,22 +213,22 @@ try {
         </header>
 
         <div class="container-fluid px-4">
-            <?php if (isset($_SESSION['success'])): ?>
+            <?php if (isset($_SESSION['success_message'])): ?>
             <div class="modern-alert alert-success alert-dismissible fade show text-success" role="alert">
                 <i class="fas fa-check-circle alert-icon"></i>
-                <?= htmlspecialchars($_SESSION['success']); ?>
+                <?= htmlspecialchars($_SESSION['success_message']); ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
-            <?php unset($_SESSION['success']); ?>
+            <?php unset($_SESSION['success_message']); ?>
             <?php endif; ?>
 
-            <?php if (isset($_SESSION['error'])): ?>
+            <?php if (isset($_SESSION['error_message'])): ?>
             <div class="modern-alert alert-danger alert-dismissible fade show text-danger" role="alert">
                 <i class="fas fa-times-circle alert-icon"></i>
-                <?= htmlspecialchars($_SESSION['error']); ?>
+                <?= htmlspecialchars($_SESSION['error_message']); ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
-            <?php unset($_SESSION['error']); ?>
+            <?php unset($_SESSION['error_message']); ?>
             <?php endif; ?>
 
             <!-- Quick Stats Dashboard -->
