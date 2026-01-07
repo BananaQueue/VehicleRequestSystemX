@@ -135,8 +135,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Retrieve errors and old POST data from session if redirected back
-$errors = $_SESSION['errors'] ?? [];
-unset($_SESSION['errors']);
+$errors = $_SESSION['errors_message'] ?? [];
+unset($_SESSION['errors_message']);
 $old_post = $_SESSION['old_post'] ?? [];
 unset($_SESSION['old_post']);
 

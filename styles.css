@@ -499,7 +499,7 @@ body.login-page {
   background: linear-gradient(135deg, var(--primary-color) 0%, #2563eb 100%);
   color: white;
   padding: 2rem;
-  margin-bottom: 2rem;
+  margin-bottom: 1rem;
   box-shadow: var(--shadow);
 }
 
@@ -1049,7 +1049,7 @@ body.login-page {
 /* Alert Improvements */
 .modern-alert {
   display: flex;
-  padding: 1.25rem 1.5rem;
+  padding: 0 1.5rem;
   
 }
 
@@ -1083,16 +1083,6 @@ body.login-page {
   }
 
   /* Dashboard responsive adjustments */
-  .modern-header {
-    padding: 1rem;
-  }
-
-  .modern-header h1 {
-    font-size: 2rem;
-    flex-direction: column;
-    text-align: center;
-    gap: 0.5rem;
-  }
 
   .user-section {
     flex-direction: column;

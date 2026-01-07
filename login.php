@@ -21,7 +21,7 @@ require 'db.php'; // Include your database connection
 
         $email = filter_var($email, FILTER_SANITIZE_EMAIL);
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $_SESSION['error'] = "Invalid email format.";
+            $_SESSION['error_message'] = "Invalid email format.";
             header("Location: login.php");
             exit();
         }
@@ -32,7 +32,7 @@ require 'db.php'; // Include your database connection
             $user = $stmt->fetch();
         } catch (PDOException $e) {
             error_log("Auth PDO Error: " . $e->getMessage(), 0);
-            $_SESSION['error'] = "An unexpected error occurred. Please try again.";
+            $_SESSION['error_message'] = "An unexpected error occurred. Please try again.";
             header("Location: login.php");
             exit();
         }
@@ -57,7 +57,7 @@ require 'db.php'; // Include your database connection
             }
             exit;
         } else {
-            $_SESSION['error'] = "Invalid email or password.";
+            $_SESSION['error_message'] = "Invalid email or password.";
             header("Location: login.php");
             exit();
         }
@@ -97,15 +97,15 @@ require 'db.php'; // Include your database connection
             </div>
             
             <!-- Error Alert -->
-            <?php if (isset($_SESSION['error'])): ?>
+            <?php if (isset($_SESSION['error_message'])): ?>
                 <div class="login-alert" role="alert">
                     <i class="fas fa-exclamation-triangle alert-icon"></i>
                     <div>
-                        <strong>Login Failed:</strong> <?= htmlspecialchars($_SESSION['error']) ?>
+                        <strong>Login Failed:</strong> <?= htmlspecialchars($_SESSION['error_message']) ?>
                     </div>
                     <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>
-                <?php unset($_SESSION['error']); ?>
+                <?php unset($_SESSION['error_message']); ?>
             <?php endif; ?>
 
             <!-- Login Form -->

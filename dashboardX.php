@@ -10,15 +10,18 @@ sync_active_assignments($pdo);
 
 // Helper Functions
 function canEmployeeRequest($employeeRequestStatus, $isAssignedVehicle) {
-    $hasPendingRequest = in_array($employeeRequestStatus, [
-        'pending_dispatch_assignment', 
-        'pending_admin_approval', 
-        'rejected_reassign_dispatch'
-    ]);
+    //$hasPendingRequest = in_array($employeeRequestStatus, [
+        //'pending_dispatch_assignment', 
+        //'pending_admin_approval', 
+        //'rejected_reassign_dispatch'
+    //]);
     
-    $hasApprovedWithVehicle = ($employeeRequestStatus === 'approved' && $isAssignedVehicle);
+    //$hasApprovedWithVehicle = ($employeeRequestStatus === 'approved' && $isAssignedVehicle);
     
-    return !$hasPendingRequest && !$hasApprovedWithVehicle;
+    //return !$hasPendingRequest && !$hasApprovedWithVehicle;
+
+    // Allow employees to make requests at any time
+    return true;
 }
 
 
@@ -446,6 +449,25 @@ $allRequestDriverIds = [];
 if ($isEmployee) {
     $allRequestVehicleIds = array_merge($allRequestVehicleIds, array_column($myRequests, 'assigned_vehicle_id'));
     $allRequestDriverIds = array_merge($allRequestDriverIds, array_column($myRequests, 'assigned_driver_id'));
+
+    // Categorize requests for display in alerts
+    $pendingRequests = [];
+    $approvedRequests = [];
+    $rejectedRequests = [];
+
+    foreach ($myRequests as $req) {
+        if (in_array($req['status'], ['pending_dispatch_assignment', 'pending_admin_approval', 'rejected_reassign_dispatch'])) {
+            $pendingRequests[] = $req;
+        } elseif ($req['status'] === 'approved') {
+            $today = date('Y-m-d');
+            $returnDate = $req['return_date'] ?? $req['departure_date'] ?? null;
+            if ($returnDate && $returnDate >= $today) {
+                $approvedRequests[] = $req;
+            }
+        } elseif ($req['status'] === 'rejected_new_request') {
+            $rejectedRequests[] = $req;
+        }
+    }
 } 
 if ($isAdmin) {
     $allRequestVehicleIds = array_merge($allRequestVehicleIds, array_column($pendingAdminApprovalRequests, 'assigned_vehicle_id'));
@@ -827,18 +849,17 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
             <?php endif; ?>
 
             <?php if ($isEmployee): ?>
-                    <?php if ($employeeRequestStatus === 'rejected_reassign_dispatch'): ?>
+                    <!-- <?php if ($employeeRequestStatus === 'rejected_reassign_dispatch'): ?>
                     <div class="modern-alert">
                         <div class="alert alert-permanent alert-warning">
-                            <strong>Request Under Reassignment:</strong> Your vehicle request was sent back to dispatch for reassignment.  
-                            You cannot submit a new request until this process is complete.
+                            <strong>Request Under Reassignment:</strong> Your vehicle request was sent back to dispatch for reassignment.
                         </div>
                     </div>
                     <?php elseif ($employeeRequestStatus === 'rejected_new_request'): ?>
                     <div class="modern-alert">
                         <i class="fas fa-times-circle alert-icon"></i>
                         <div class="alert alert-permanent alert-danger">
-                            <strong>Request Rejected:</strong> Your vehicle request has been rejected. Please submit a new request.
+                            <strong>Request Rejected:</strong> Your vehicle request has been rejected. Please resubmit a new request.
                         </div>
                     </div>
 
@@ -847,23 +868,13 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                         <i class="fas fa-info-circle alert-icon"></i>
                         <div class="alert alert-permanent alert-info">
                             <strong>Request Status:</strong> Your vehicle request has been assigned a vehicle and driver, and is now pending admin approval.
-                            You cannot submit another request at this time.
                         </div>
                     </div>
                     <?php elseif ($employeeRequestStatus === 'pending_dispatch_assignment'): ?>
                     <div class="modern-alert">
                         <i class="fas fa-info-circle alert-icon"></i>
                         <div class="alert alert-permanent alert-warning">
-                            <strong>Request Status:</strong> Your vehicle request is currently awaiting dispatch assignment.
-                            You cannot submit another request at this time.
-                        </div>
-                    </div>
-                    <?php elseif ($employeeRequestStatus === 'approved_pending_dispatch'): ?>
-                    <div class="modern-alert">
-                        <i class="fas fa-info-circle alert-icon"></i>
-                        <div class="alert alert-permanent alert-info">
-                            <strong>Request Status:</strong> Your vehicle request has been approved and is awaiting
-                            vehicle dispatch.
+                            <strong>Request Status:</strong> You have a request awaiting dispatch assignment.
                         </div>
                     </div>
                     <?php elseif ($employeeRequestStatus === 'rejected'): ?>
@@ -878,12 +889,171 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                     <div class="modern-alert">
                         <i class="fas fa-check-circle alert-icon"></i>
                         <div class="alert alert-permanent alert-success">
-                            <strong>Request Status:</strong> Your vehicle request has been approved and a vehicle has
-                            been assigned!
+                            <strong>Request Status:</strong> You have approved vehicle requests.
                         </div>
                     </div>
-                    <?php endif; ?>
-                    <?php endif; ?>
+                    <?php endif; ?> -->
+
+                        <!-- Show Pending Requests Alert -->
+    <?php if (!empty($pendingRequests)): ?>
+    <div class="modern-alert">
+        <div class="alert alert-warning">
+            <div class="d-flex align-items-start">
+                <i class="fas fa-clock alert-icon me-3"></i>
+                <div class="flex-grow-1">
+                    <strong>Pending Requests (<?= count($pendingRequests) ?>):</strong>
+                    <p class="mb-2">You have <?= count($pendingRequests) ?> request<?= count($pendingRequests) > 1 ? 's' : '' ?> being processed. You can still submit additional requests.</p>
+                    <div class="list-group list-group-flush">
+                        <?php foreach ($pendingRequests as $req): ?>
+                        <div class="list-group-item bg-transparent border-start-0 border-end-0 px-0 py-2">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <div class="fw-bold">
+                                        <i class="fas fa-location-dot me-1"></i><?= htmlspecialchars($req['destination']) ?>
+                                    </div>
+                                    <div class="small text-muted">
+                                        <i class="fas fa-calendar me-1"></i>
+                                        <?php if (!empty($req['departure_date'])): ?>
+                                            <?= date('M j', strtotime($req['departure_date'])) ?>
+                                            <?php if (!empty($req['return_date']) && $req['return_date'] != $req['departure_date']): ?>
+                                                - <?= date('M j', strtotime($req['return_date'])) ?>
+                                            <?php endif; ?>
+                                        <?php else: ?>
+                                            Date TBD
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                                <span class="badge bg-warning text-dark">
+                                    <?php 
+                                    if ($req['status'] === 'pending_dispatch_assignment') {
+                                        echo 'Awaiting Dispatch';
+                                    } elseif ($req['status'] === 'pending_admin_approval') {
+                                        echo 'Awaiting Admin';
+                                    } elseif ($req['status'] === 'rejected_reassign_dispatch') {
+                                        echo 'Reassigning';
+                                    }
+                                    ?>
+                                </span>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+    
+    <!-- Show Approved/Active Trips Alert -->
+    <?php if (!empty($approvedRequests)): ?>
+    <div class="modern-alert">
+        <div class="alert alert-success">
+            <div class="d-flex align-items-start">
+                <i class="fas fa-check-circle alert-icon me-3"></i>
+                <div class="flex-grow-1">
+                    <strong>Approved Trips (<?= count($approvedRequests) ?>):</strong>
+                    <p class="mb-2">You have <?= count($approvedRequests) ?> approved trip<?= count($approvedRequests) > 1 ? 's' : '' ?>. You can book additional vehicles for different dates.</p>
+                    <div class="list-group list-group-flush">
+                        <?php foreach ($approvedRequests as $req): ?>
+                        <?php
+                            $vehiclePlate = '----';
+                            if ($req['assigned_vehicle_id'] && isset($vehicleLookup[$req['assigned_vehicle_id']])) {
+                                $vehiclePlate = $vehicleLookup[$req['assigned_vehicle_id']];
+                            }
+                            $driverName = '----';
+                            if ($req['assigned_driver_id'] && isset($driverLookup[$req['assigned_driver_id']])) {
+                                $driverName = $driverLookup[$req['assigned_driver_id']];
+                            }
+                        ?>
+                        <div class="list-group-item bg-transparent border-start-0 border-end-0 px-0 py-2">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <div class="fw-bold">
+                                        <i class="fas fa-location-dot me-1"></i><?= htmlspecialchars($req['destination']) ?>
+                                    </div>
+                                    <div class="small text-muted">
+                                        <i class="fas fa-calendar me-1"></i>
+                                        <?php if (!empty($req['departure_date'])): ?>
+                                            <?= date('M j', strtotime($req['departure_date'])) ?>
+                                            <?php if (!empty($req['return_date']) && $req['return_date'] != $req['departure_date']): ?>
+                                                - <?= date('M j', strtotime($req['return_date'])) ?>
+                                            <?php endif; ?>
+                                        <?php else: ?>
+                                            Date TBD
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="small">
+                                        <i class="fas fa-car me-1 text-primary"></i><?= htmlspecialchars($vehiclePlate) ?>
+                                        <i class="fas fa-user ms-2 me-1 text-info"></i><?= htmlspecialchars($driverName) ?>
+                                    </div>
+                                </div>
+                                <span class="badge bg-success">
+                                    Approved
+                                </span>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+    
+    <!-- Show Rejected Requests Alert -->
+    <?php if (!empty($rejectedRequests)): ?>
+    <div class="modern-alert">
+        <div class="alert alert-danger">
+            <div class="d-flex align-items-start">
+                <i class="fas fa-times-circle alert-icon me-3"></i>
+                <div class="flex-grow-1">
+                    <strong>Rejected Requests (<?= count($rejectedRequests) ?>):</strong>
+                    <p class="mb-2">You have <?= count($rejectedRequests) ?> rejected request<?= count($rejectedRequests) > 1 ? 's' : '' ?>. You can submit new requests anytime.</p>
+                    <div class="list-group list-group-flush">
+                        <?php foreach ($rejectedRequests as $req): ?>
+                        <div class="list-group-item bg-transparent border-start-0 border-end-0 px-0 py-2">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <div class="fw-bold">
+                                        <i class="fas fa-location-dot me-1"></i><?= htmlspecialchars($req['destination']) ?>
+                                    </div>
+                                    <div class="small text-muted">
+                                        <i class="fas fa-calendar me-1"></i>
+                                        <?php if (!empty($req['departure_date'])): ?>
+                                            <?= date('M j', strtotime($req['departure_date'])) ?>
+                                            <?php if (!empty($req['return_date']) && $req['return_date'] != $req['departure_date']): ?>
+                                                - <?= date('M j', strtotime($req['return_date'])) ?>
+                                            <?php endif; ?>
+                                        <?php else: ?>
+                                            Date TBD
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                                <span class="badge bg-danger">
+                                    Rejected
+                                </span>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+    
+    <!-- Passenger Status Alert (keep as is) -->
+    <?php if ($passengerRequestDetails !== null): ?>
+    <div class="modern-alert">
+        <div class="alert alert-permanent alert-info">
+            <strong>Passenger Status:</strong> You are currently listed as a passenger in 
+            <strong><?= htmlspecialchars($passengerRequestDetails['requestor_name'])?></strong>'s vehicle request.
+            You can still submit your own vehicle requests.
+        </div>
+    </div>
+    <?php endif; ?>
+
+            <?php endif; ?>
 
             <div class="row g-4 dashboard-grid align-items-start">
                 <div class="col-lg-3">
@@ -995,24 +1165,65 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                  <!-- REQUEST VEHICLE BUTTON - NEW LOCATION -->
         <div class="ms-3">
             <?php if ($isEmployee): ?>
-                <?php if ($isPassengerInActiveRequest && !$cannotRequest): ?>
-                <button type="button" 
-                        class="btn btn-success-modern btn-modern" 
-                        onclick="showPassengerWarningModal()">
-                    <i class="fas fa-plus me-2"></i>Request Vehicle
-                </button>
+                 <?php 
+                // Check if user has any active or upcoming trips (approved trips only)
+                $hasActiveTrips = false;
+                if (!empty($myRequests)) {
+                    foreach ($myRequests as $req) {
+                        if ($req['status'] === 'approved') {
+                            $departureDate = $req['departure_date'] ?? null;
+                            $returnDate = $req['return_date'] ?? $departureDate;
+                            $today = date('Y-m-d');
+        
+                            if ($departureDate && $returnDate >= $today) {
+                                $hasActiveTrips = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+         
+                // Check if user has any pending requests
+                $hasPendingRequests = false;
+                if (!empty($myRequests)) {
+                    foreach ($myRequests as $req) {
+                        if (in_array($req['status'], ['pending_dispatch_assignment', 'pending_admin_approval', 'rejected_reassign_dispatch'])) {
+                            $hasPendingRequests = true;
+                            break;
+                        }
+                    }
+                }
+                ?>
+        
+                <?php if ($hasActiveTrips || $hasPendingRequests): ?>
+                    <!-- User has existing trips/requests - show info modal -->
+                    <button type="button" 
+                            class="btn btn-success-modern btn-modern" 
+                            onclick="showMultipleRequestsModal()">
+                        <i class="fas fa-plus me-2"></i>Request Vehicle
+                    </button>
+                <?php elseif ($isPassengerInActiveRequest): ?>
+                    <!-- User is passenger in someone else's request - show info modal -->
+                    <button type="button" 
+                            class="btn btn-success-modern btn-modern" 
+                            onclick="showPassengerWarningModal()">
+                        <i class="fas fa-plus me-2"></i>Request Vehicle
+                    </button>
                 <?php else: ?>
-                <a href="create_request.php"
-                    class="btn btn-success-modern btn-modern <?= $cannotRequest ? 'disabled' : '' ?>">
-                    <i class="fas fa-plus me-2"></i>Request Vehicle
-                </a>
+                    <!-- No existing requests - direct link -->
+                    <a href="create_request.php"
+                    class="btn btn-success-modern btn-modern">
+                        <i class="fas fa-plus me-2"></i>Request Vehicle
+                    </a>
                 <?php endif; ?>
             <?php elseif (!$isLoggedIn): ?>
-            <button class="btn btn-success-modern btn-modern" onclick="requireLogin()">
-                <i class="fas fa-plus me-2"></i>Request Vehicle
-            </button>
+                <button class="btn btn-success-modern btn-modern" onclick="requireLogin()">
+                    <i class="fas fa-plus me-2"></i>Request Vehicle
+                </button>
             <?php endif; ?>
-            </div>
+        </div>
+
+
             </div>
             </div>
 
@@ -1174,7 +1385,7 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                                 My Requests
                             </h2>
                             <a href="create_request.php"
-                                class="btn btn-primary-modern btn-modern <?= $cannotRequest ? 'disabled' : '' ?>">
+                                class="btn btn-primary-modern btn-modern">
                                 <i class="fas fa-plus me-2"></i>New Request
                             </a>
                         </div>
@@ -1558,6 +1769,7 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
             </table>
         </div>
     </div>
+</div>
 
     <!-- Admin Action Modal with Request Details Preview -->
     <div class="modal fade" id="adminActionModal" tabindex="-1" aria-labelledby="adminActionModalLabel" aria-hidden="true">
@@ -1662,8 +1874,6 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                         </button>
                     </div>
                 </form>
-            </div>
-                </div>
             </div>
         </div>
     </div>
@@ -1916,6 +2126,79 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
         </div>
     </div>
 </div>
+
+<!-- Outgoing Trips Warning Modal - New (when user is the requestor with existing trips) -->
+<div class="modal fade text-dark" id="outgoingTripsWarningModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-calendar-check me-2"></i>Outgoing Trips Detected
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p><strong>You have outgoing trips, do you wish to book another one?</strong></p>
+                <div class="alert alert-info mb-0">
+                    <i class="fas fa-info-circle me-2"></i>
+                    You can manage multiple vehicle requests for different dates.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-2"></i>Cancel
+                </button>
+                <a href="create_request.php" class="btn btn-primary">
+                    <i class="fas fa-check me-2"></i>Yes, Continue
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Multiple Requests Info Modal - Shows when user has any existing requests/trips -->
+<div class="modal fade text-dark" id="multipleRequestsModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-calendar-plus me-2"></i>Add Another Vehicle Request
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p><strong>You currently have:</strong></p>
+                <ul class="list-unstyled mb-3">
+                    <?php if (!empty($pendingRequests)): ?>
+                    <li class="mb-2">
+                        <i class="fas fa-clock text-warning me-2"></i>
+                        <strong><?= count($pendingRequests) ?></strong> pending request<?= count($pendingRequests) > 1 ? 's' : '' ?>
+                    </li>
+                    <?php endif; ?>
+                    <?php if (!empty($approvedRequests)): ?>
+                    <li class="mb-2">
+                        <i class="fas fa-check-circle text-success me-2"></i>
+                        <strong><?= count($approvedRequests) ?></strong> approved trip<?= count($approvedRequests) > 1 ? 's' : '' ?>
+                    </li>
+                    <?php endif; ?>
+                </ul>
+                <p>You can submit multiple vehicle requests for different dates. Each request will be processed independently.</p>
+                <div class="alert alert-info mb-0">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>Tip:</strong> Make sure your trip dates don't overlap to avoid scheduling conflicts.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-2"></i>Cancel
+                </button>
+                <a href="create_request.php" class="btn btn-primary">
+                    <i class="fas fa-check me-2"></i>Continue to Request
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
     <!-- Cancel Request Modal -->
 <div class="modal fade text-dark" id="cancelRequestModal" tabindex="-1" aria-labelledby="cancelRequestModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -2011,8 +2294,17 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-    function showPassengerWarningModal() {
+function showPassengerWarningModal() {
     const modal = new bootstrap.Modal(document.getElementById('passengerWarningModal'));
+    modal.show();
+}
+function showMultipleRequestsModal() {
+    const modal = new bootstrap.Modal(document.getElementById('multipleRequestsModal'));
+    modal.show();
+}
+
+function showOutgoingTripsWarningModal() {
+    const modal = new bootstrap.Modal(document.getElementById('outgoingTripsWarningModal'));
     modal.show();
 }
 
