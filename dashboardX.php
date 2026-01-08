@@ -66,14 +66,13 @@ function getBookedTripsStatus($employeeOrDriver, $isDriver = false) {
             SELECT r.*, v.plate_number, r.departure_date, r.return_date
             FROM requests r
             INNER JOIN vehicles v ON v.id = r.assigned_vehicle_id
-            INNER JOIN drivers d ON d.id = r.assigned_driver_id
-            WHERE d.name = :driver_name
+            WHERE r.assigned_driver_id = :driver_id
             AND r.status = 'approved'
             AND COALESCE(r.return_date, r.departure_date) >= :today
             ORDER BY r.departure_date ASC
         ");
         $stmt->execute([
-            'driver_name' => $employeeOrDriver['name'],
+            'driver_id' => $employeeOrDriver['id'],
             'today' => $today
         ]);
         $trips = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -383,14 +382,14 @@ if ($isAdmin) {
     $employees = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     // Fetch drivers with assignment status - optimized approach
-    $stmt = $pdo->query("SELECT * FROM drivers ORDER BY name ASC");
+    $stmt = $pdo->query("SELECT id, name, email, phone, position FROM users WHERE role = 'driver' ORDER BY name ASC");
     $driversRaw = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
     // Get all driver assignments in one query
     $driverAssignments = [];
-    $stmt = $pdo->query("SELECT driver_name, plate_number FROM vehicles WHERE status = 'assigned' AND driver_name IS NOT NULL");
+    $stmt = $pdo->query("SELECT driver_id, plate_number FROM vehicles WHERE status = 'assigned' AND driver_id IS NOT NULL");
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        $driverAssignments[$row['driver_name']] = $row['plate_number'];
+        $driverAssignments[$row['driver_id']] = $row['plate_number'];
     }
     
     // Add assignment status to drivers and sort
@@ -400,8 +399,8 @@ if ($isAdmin) {
     $availableDrivers = [];
     
     foreach ($driversRaw as $driver) {
-        $driver['assigned_vehicle'] = $driverAssignments[$driver['name']] ?? null;
-        $driver['is_assigned'] = isset($driverAssignments[$driver['name']]);
+        $driver['assigned_vehicle'] = $driverAssignments[$driver['id']] ?? null;
+        $driver['is_assigned'] = isset($driverAssignments[$driver['id']]);
         
         // Add booked trips status for each driver
         $driver['trip_status'] = getBookedTripsStatus($driver, true);
@@ -494,7 +493,7 @@ if (!empty($vehicleIds)) {
 
 if (!empty($driverIds)) {
     $placeholders = str_repeat('?,', count($driverIds) - 1) . '?';
-    $stmt = $pdo->prepare("SELECT id, name FROM drivers WHERE id IN ($placeholders)");
+    $stmt = $pdo->prepare("SELECT id, name FROM users WHERE id IN ($placeholders) AND role = 'driver'");
     $stmt->execute(array_values($driverIds));
     while ($row = $stmt->fetch()) {
         $driverLookup[$row['id']] = $row['name'];
@@ -590,7 +589,7 @@ $calendarStmt = $pdo->prepare("
         d.name AS driver_name
     FROM requests r
     LEFT JOIN vehicles v ON v.id = r.assigned_vehicle_id
-    LEFT JOIN drivers d ON d.id = r.assigned_driver_id
+    LEFT JOIN users d ON d.id = r.assigned_driver_id AND d.role = 'driver'
     WHERE r.status = 'approved'
       AND r.assigned_vehicle_id IS NOT NULL
       AND COALESCE(r.departure_date, DATE(r.request_date)) IS NOT NULL

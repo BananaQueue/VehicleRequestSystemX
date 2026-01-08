@@ -36,10 +36,6 @@ function handle_request_cancellation(PDO $pdo, int $requestId, string $cancelRea
             $stmt = $pdo->prepare("UPDATE vehicles SET status = 'available', assigned_to = NULL, driver_name = NULL WHERE id = ?");
             $stmt->execute([$request['assigned_vehicle_id']]);
         }
-        if ($request['assigned_driver_id']) {
-            $stmt = $pdo->prepare("UPDATE drivers SET status = 'available' WHERE id = ?");
-            $stmt->execute([$request['assigned_driver_id']]);
-        }
 
         // Update the request status to cancelled
         $updateStmt = $pdo->prepare("

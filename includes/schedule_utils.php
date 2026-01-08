@@ -98,13 +98,6 @@ function has_driver_conflict(PDO $pdo, int $driverId, string $startDate, string 
 /**
  * Check if a vehicle has pending approval conflicts (dispatch assigned same vehicle to multiple requests)
  * Returns details of conflicting request if found
- * 
- * @param PDO $pdo
- * @param int $vehicleId
- * @param string $startDate
- * @param string $endDate
- * @param int|null $excludeRequestId
- * @return array|null Array with conflict details or null if no conflict
  */
 function get_pending_vehicle_conflict(PDO $pdo, int $vehicleId, string $startDate, string $endDate, ?int $excludeRequestId = null): ?array
 {
@@ -146,13 +139,6 @@ function get_pending_vehicle_conflict(PDO $pdo, int $vehicleId, string $startDat
 /**
  * Check if a driver has pending approval conflicts (dispatch assigned same driver to multiple requests)
  * Returns details of conflicting request if found
- * 
- * @param PDO $pdo
- * @param int $driverId
- * @param string $startDate
- * @param string $endDate
- * @param int|null $excludeRequestId
- * @return array|null Array with conflict details or null if no conflict
  */
 function get_pending_driver_conflict(PDO $pdo, int $driverId, string $startDate, string $endDate, ?int $excludeRequestId = null): ?array
 {
@@ -191,14 +177,16 @@ function get_pending_driver_conflict(PDO $pdo, int $driverId, string $startDate,
     return $result ?: null;
 }
 
+/**
+ * UPDATED: Sync active assignments - no more driver status management
+ */
 function sync_active_assignments(PDO $pdo): void
 {
     $today = date('Y-m-d');
 
-    // IMPROVED: First, release ALL vehicles/drivers from past trips
-    // Get all approved requests that have ended (return_date < today)
+    // Release vehicles from past trips
     $pastTripsStmt = $pdo->prepare("
-        SELECT DISTINCT r.assigned_vehicle_id, r.assigned_driver_id
+        SELECT DISTINCT r.assigned_vehicle_id
         FROM requests r
         WHERE r.status = 'approved'
           AND r.assigned_vehicle_id IS NOT NULL
@@ -214,23 +202,15 @@ function sync_active_assignments(PDO $pdo): void
                 UPDATE vehicles
                 SET status = 'available',
                     assigned_to = NULL,
-                    driver_name = NULL
+                    driver_id = NULL
                 WHERE id = :id AND status = 'assigned'
             ");
             $releaseVehicle->execute([':id' => $pastTrip['assigned_vehicle_id']]);
         }
-        
-        if ($pastTrip['assigned_driver_id']) {
-            $releaseDriver = $pdo->prepare("
-                UPDATE drivers
-                SET status = 'available'
-                WHERE id = :id AND status = 'assigned'
-            ");
-            $releaseDriver->execute([':id' => $pastTrip['assigned_driver_id']]);
-        }
+        // REMOVED: Driver status update - drivers don't have status field anymore
     }
 
-    // Now handle TODAY's active trips
+    // Handle TODAY's active trips
     $activeStmt = $pdo->prepare("
         SELECT 
             r.id,
@@ -239,7 +219,7 @@ function sync_active_assignments(PDO $pdo): void
             r.assigned_driver_id,
             dr.name AS driver_name
         FROM requests r
-        LEFT JOIN drivers dr ON dr.id = r.assigned_driver_id
+        LEFT JOIN users dr ON dr.id = r.assigned_driver_id AND dr.role = 'driver'
         WHERE r.status = 'approved'
           AND r.assigned_vehicle_id IS NOT NULL
           AND COALESCE(r.departure_date, DATE(r.request_date)) <= :today_start
@@ -251,11 +231,9 @@ function sync_active_assignments(PDO $pdo): void
     ]);
 
     $activeVehicleIds = [];
-    $activeDriverIds = [];
 
     while ($row = $activeStmt->fetch(PDO::FETCH_ASSOC)) {
         $vehicleId = $row['assigned_vehicle_id'];
-        $driverId = $row['assigned_driver_id'];
 
         if ($vehicleId) {
             $activeVehicleIds[] = $vehicleId;
@@ -263,26 +241,20 @@ function sync_active_assignments(PDO $pdo): void
                 UPDATE vehicles
                 SET status = 'assigned',
                     assigned_to = :assigned_to,
-                    driver_name = :driver_name
+                    driver_id = :driver_id
                 WHERE id = :id
             ");
             $vehicleUpdate->execute([
                 ':assigned_to' => $row['requestor_name'],
-                ':driver_name' => $row['driver_name'] ?? null,
+                ':driver_id' => $row['assigned_driver_id'],
                 ':id' => $vehicleId,
             ]);
         }
-
-        if ($driverId) {
-            $activeDriverIds[] = $driverId;
-            $driverUpdate = $pdo->prepare("UPDATE drivers SET status = 'assigned' WHERE id = :id");
-            $driverUpdate->execute([':id' => $driverId]);
-        }
+        // REMOVED: Driver status update - drivers have no status field
     }
-    // Remove null or empty IDs (prevents SQLSTATE[HY093])
-    $activeVehicleIds = array_values(array_filter($activeVehicleIds));
-    $activeDriverIds  = array_values(array_filter($activeDriverIds));
     
+    // Remove null or empty IDs
+    $activeVehicleIds = array_values(array_filter($activeVehicleIds));
 
     // Release any remaining vehicles that are marked assigned but have no active trips today
     if (!empty($activeVehicleIds)) {
@@ -291,7 +263,7 @@ function sync_active_assignments(PDO $pdo): void
             UPDATE vehicles
             SET status = 'available',
                 assigned_to = NULL,
-                driver_name = NULL
+                driver_id = NULL
             WHERE status = 'assigned'
               AND id NOT IN ($placeholders)
         ");
@@ -301,24 +273,12 @@ function sync_active_assignments(PDO $pdo): void
             UPDATE vehicles
             SET status = 'available',
                 assigned_to = NULL,
-                driver_name = NULL
+                driver_id = NULL
             WHERE status = 'assigned'
         ");
     }
-
-    // Release drivers that are marked assigned but not driving today
-    if (!empty($activeDriverIds)) {
-        $placeholders = implode(',', array_fill(0, count($activeDriverIds), '?'));
-        $releaseDrivers = $pdo->prepare("
-            UPDATE drivers
-            SET status = 'available'
-            WHERE status = 'assigned'
-              AND id NOT IN ($placeholders)
-        ");
-        $releaseDrivers->execute($activeDriverIds);
-    } else {
-        $pdo->exec("UPDATE drivers SET status = 'available' WHERE status = 'assigned'");
-    }
+    
+    // REMOVED: All driver release logic - drivers no longer have status field
 }
 
 function getStatusTextDispatch($status) {

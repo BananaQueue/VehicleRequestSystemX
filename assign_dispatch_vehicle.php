@@ -69,20 +69,20 @@ try {
     ]);
     $availableVehicles = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // FIXED: Fetch available drivers - Only check against APPROVED requests, not pending ones
+    // UPDATED: Fetch available drivers from users table where role='driver'
     $stmt = $pdo->prepare("
-        SELECT *
-        FROM drivers d
-        WHERE d.status = 'available'
+        SELECT u.*
+        FROM users u
+        WHERE u.role = 'driver'
           AND NOT EXISTS (
               SELECT 1 FROM requests r
-              WHERE r.assigned_driver_id = d.id
+              WHERE r.assigned_driver_id = u.id
                 AND r.status = 'approved'
                 AND :start_date <= COALESCE(r.return_date, r.departure_date, DATE(r.request_date))
                 AND :end_date >= COALESCE(r.departure_date, DATE(r.request_date))
                 AND r.id != :current_request_id
           )
-        ORDER BY d.name ASC
+        ORDER BY u.name ASC
     ");
     $stmt->execute([
         ':start_date' => $requestStartDate,
@@ -118,8 +118,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['assign_vehicle'])) {
         try {
             $pdo->beginTransaction();
 
-            // Fetch driver name and verify availability
-            $stmt = $pdo->prepare("SELECT name FROM drivers WHERE id = :id");
+            // UPDATED: Fetch driver name from users table and verify availability
+            $stmt = $pdo->prepare("SELECT name FROM users WHERE id = :id AND role = 'driver'");
             $stmt->execute([':id' => $selected_driver_id]);
             $driver_name = $stmt->fetchColumn();
 
@@ -182,7 +182,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['assign_vehicle'])) {
     <meta charset="UTF-8">
     <title>Assign Vehicle</title>
     <link rel="stylesheet" href="styles.css">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -247,13 +247,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['assign_vehicle'])) {
                     <div class="detail-group mb-3">
                         <label class="text-muted small"><i class="fas fa-plane-arrival me-1"></i>Return Date</label>
                         <p class="mb-0"><?= htmlspecialchars(date('F j, Y', strtotime($request['return_date']))) ?></p>
-                    </div>
-                    <?php endif; ?>
-                    
-                    <?php if (!empty($request['travel_date'])): ?>
-                    <div class="detail-group mb-3">
-                        <label class="text-muted small"><i class="fas fa-calendar-check me-1"></i>Travel Date</label>
-                        <p class="mb-0"><?= htmlspecialchars(date('F j, Y', strtotime($request['travel_date']))) ?></p>
                     </div>
                     <?php endif; ?>
                     
@@ -327,8 +320,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['assign_vehicle'])) {
                     <?php foreach ($availableDrivers as $driver): ?>
                         <option value="<?= $driver['id'] ?>">
                             <?= htmlspecialchars($driver['name']) ?>
-                            <?php if (!empty($driver['position'])): ?>
-                                - <?= htmlspecialchars($driver['position']) ?>
+                            <?php if (!empty($driver['phone'])): ?>
+                                - <?= htmlspecialchars($driver['phone']) ?>
                             <?php endif; ?>
                         </option>
                     <?php endforeach; ?>
@@ -367,7 +360,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['assign_vehicle'])) {
         </div>
     </div>
     
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         // Auto-dismiss alerts after 5 seconds
         document.addEventListener('DOMContentLoaded', function() {

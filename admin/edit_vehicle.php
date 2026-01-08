@@ -8,10 +8,10 @@ require_role('admin', '../login.php');
 $errors = [];
 $vehicle = []; // Initialize to prevent errors if not fetched
 
-// Fetch drivers for dropdown
+// Fetch drivers for dropdown (from users table where role='driver')
 $drivers = [];
 try {
-    $drivers = $pdo->query("SELECT name FROM drivers ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+    $drivers = $pdo->query("SELECT id, name FROM users WHERE role = 'driver' ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     error_log("Driver Fetch Error: " . $e->getMessage());
     $errors[] = "Could not load drivers list.";
@@ -22,9 +22,9 @@ $conditionalVehicleUpdate = function(PDO $pdo, int $id, array $data, array $curr
     $currentErrors = [];
     
     // Check if driver is already assigned to another vehicle, if a driver is selected and it's a new driver
-    if (!empty($data['driver_name']) && ($data['driver_name'] !== ($currentEntry['driver_name'] ?? null))) {
-        $checkStmt = $pdo->prepare("SELECT id FROM vehicles WHERE driver_name = ? AND id != ?");
-        $checkStmt->execute([$data['driver_name'], $id]);
+    if (!empty($data['driver_id']) && ($data['driver_id'] !== ($currentEntry['driver_id'] ?? null))) {
+        $checkStmt = $pdo->prepare("SELECT id FROM vehicles WHERE driver_id = ? AND id != ?");
+        $checkStmt->execute([$data['driver_id'], $id]);
         if ($checkStmt->fetch()) {
             $currentErrors[] = "This driver is already assigned to another vehicle.";
             return ['success' => false, 'errors' => $currentErrors];
@@ -79,7 +79,7 @@ $conditionalVehicleUpdate = function(PDO $pdo, int $id, array $data, array $curr
 $editResult = handle_edit_entry(
     $pdo,
     'vehicles',
-    ['plate_number' => 'plate_number', 'driver_name' => 'driver_name', 'make' => 'make', 'model' => 'model', 'type' => 'type'],
+    ['plate_number' => 'plate_number', 'driver_id' => 'driver_id', 'make' => 'make', 'model' => 'model', 'type' => 'type'],
     ['plate_number' => 'required', 'make' => 'required', 'model' => 'required', 'type' => 'required'],
     ['plate_number' => 'Plate number'],
     "Vehicle '%s' updated successfully.",
@@ -99,7 +99,7 @@ if (!$editResult['success']) {
 
 // Pre-fill form values for display
 $plate = $_POST['plate_number'] ?? ($vehicle['plate_number'] ?? '');
-$driver_name = $_POST['driver_name'] ?? ($vehicle['driver_name'] ?? null);
+$driver_id = $_POST['driver_id'] ?? ($vehicle['driver_id'] ?? null);
 $make = $_POST['make'] ?? ($vehicle['make'] ?? '');
 $model = $_POST['model'] ?? ($vehicle['model'] ?? '');
 $type = $_POST['type'] ?? ($vehicle['type'] ?? '');
@@ -171,14 +171,14 @@ $status = $_POST['status'] ?? ($vehicle['status'] ?? 'available');
                             </div>
                         </div>
                         <div class="mb-3 input-group-icon">
-                            <label for="driver_name" class="form-label">Assigned Driver (Optional)</label>
-                            <select class="form-select" id="driver_name" name="driver_name">
+                            <label for="driver_id" class="form-label">Assigned Driver (Optional)</label>
+                            <select class="form-select" id="driver_id" name="driver_id">
                                 <option value="">Select Driver</option>
                                 <?php foreach ($drivers as $d): ?>
-                                    <option value="<?= htmlspecialchars($d['name']) ?>" <?= ($driver_name === $d['name']) ? 'selected' : '' ?>><?= htmlspecialchars($d['name']) ?></option>
+                                    <option value="<?= htmlspecialchars($d['id']) ?>" <?= ($driver_id == $d['id']) ? 'selected' : '' ?>><?= htmlspecialchars($d['name']) ?></option>
                                 <?php endforeach; ?>
                             </select>
-                            <?php if (isset($errors['driver_name'])): ?><div class="text-danger"><?= htmlspecialchars($errors['driver_name']) ?></div><?php endif; ?>
+                            <?php if (isset($errors['driver_id'])): ?><div class="text-danger"><?= htmlspecialchars($errors['driver_id']) ?></div><?php endif; ?>
                         </div>
                         <div class="mb-3 input-group-icon">
                             <label for="make" class="form-label">Make:</label>

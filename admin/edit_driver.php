@@ -8,14 +8,34 @@ require_role('admin', '../login.php');
 $errors = [];
 $driver = []; // Initialize to prevent errors if not fetched
 
+// Define a pre-update action to update vehicles if driver name changes
+$preUpdateDriverAction = function(PDO $pdo, int $id, array $currentEntry, array $newData): array {
+    try {
+        // If name is being changed, we might need to handle any business logic
+        // Since vehicles now use driver_id, no update needed there
+        // But you could add additional validation or logging here if needed
+        return ['success' => true];
+    } catch (Exception $e) {
+        error_log("Pre-update Driver Action Error: " . $e->getMessage());
+        return ['success' => false, 'message' => "Failed to process driver update."];
+    }
+};
+
+// Add WHERE clause to only edit users with role='driver'
+$customWhereClause = "role = 'driver'";
+
 $editResult = handle_edit_entry(
     $pdo,
-    'drivers',
+    'users',
     ['name' => 'name', 'email' => 'email', 'phone' => 'phone'],
     ['name' => 'required', 'email' => 'required|email'],
     ['email' => 'Email'],
     "Driver '%s' updated successfully.",
-    "../dashboardX.php#driverManagement"
+    "../dashboardX.php#driverManagement",
+    [
+        'pre_update_action' => $preUpdateDriverAction,
+        'where_clause' => $customWhereClause
+    ]
 );
 
 if (!$editResult['success']) {

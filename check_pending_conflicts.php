@@ -81,7 +81,7 @@ try {
     // Check driver conflicts if driver is assigned
     if ($driver_name && $driver_name !== '----' && $driver_name !== 'TBD') {
         // Get driver ID from name
-        $stmt = $pdo->prepare("SELECT id FROM drivers WHERE name = :name");
+        $stmt = $pdo->prepare("SELECT id FROM users WHERE name = :name AND role = 'driver'");
         $stmt->execute([':name' => $driver_name]);
         $driver_id = $stmt->fetchColumn();
 

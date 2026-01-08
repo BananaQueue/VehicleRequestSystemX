@@ -8,9 +8,9 @@ require_role('admin', '../login.php');
 // Define a pre-delete action to unassign the driver from vehicles
 $preDeleteDriverAction = function(PDO $pdo, int $id, array $item): array {
     try {
-        $driverName = $item['name'];
-        $updateVehicles = $pdo->prepare("UPDATE vehicles SET driver_name = NULL WHERE driver_name = ?");
-        $updateVehicles->execute([$driverName]);
+        // Unassign vehicles by setting driver_id to NULL
+        $updateVehicles = $pdo->prepare("UPDATE vehicles SET driver_id = NULL WHERE driver_id = ?");
+        $updateVehicles->execute([$id]);
         return ['success' => true];
     } catch (PDOException $e) {
         error_log("Pre-delete Driver Action PDO Error: " . $e->getMessage());
@@ -18,11 +18,17 @@ $preDeleteDriverAction = function(PDO $pdo, int $id, array $item): array {
     }
 };
 
+// Add WHERE clause to only delete users with role='driver'
+$customWhereClause = "role = 'driver'";
+
 handle_delete_entry(
     $pdo,
-    'drivers',
+    'users',
     'id',
     'name',
     "../dashboardX.php#driverManagement",
-    ['pre_delete_action' => $preDeleteDriverAction]
+    [
+        'pre_delete_action' => $preDeleteDriverAction,
+        'where_clause' => $customWhereClause
+    ]
 );

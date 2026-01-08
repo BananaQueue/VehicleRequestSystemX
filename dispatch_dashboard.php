@@ -38,9 +38,18 @@ try {
     $stmt = $pdo->query("SELECT COUNT(*) FROM vehicles WHERE status = 'assigned'");
     $assignedVehiclesCount = $stmt->fetchColumn();
 
-    $stmt = $pdo->query("SELECT COUNT(*) FROM drivers WHERE status = 'available'");
+    // Drivers are determined by vehicle assignment, not status
+    // Count drivers not currently assigned to any vehicle
+    $stmt = $pdo->query("
+        SELECT COUNT(DISTINCT u.id) 
+        FROM users u 
+        WHERE u.role = 'driver' 
+        AND NOT EXISTS (
+            SELECT 1 FROM vehicles v WHERE v.driver_id = u.id AND v.status = 'assigned'
+        )
+    ");
     $availableDriversCount = $stmt->fetchColumn();
-} catch (PDOException $e) {
+    } catch (PDOException $e) {
     error_log("Stats Error: " . $e->getMessage(), 0);
 }
 
@@ -69,7 +78,7 @@ try {
             d.name AS driver_name
         FROM requests r
         LEFT JOIN vehicles v ON v.id = r.assigned_vehicle_id
-        LEFT JOIN drivers d ON d.id = r.assigned_driver_id
+        LEFT JOIN users d ON d.id = r.assigned_driver_id AND d.role = 'driver'
         WHERE r.status = 'approved'
           AND r.assigned_vehicle_id IS NOT NULL
           AND COALESCE(r.departure_date, DATE(r.request_date)) IS NOT NULL

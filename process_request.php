@@ -14,13 +14,13 @@ $rejection_reason = $_POST['rejection_reason'] ?? null;
 
 // Validate inputs
 if ($request_id === false || !in_array($action, ['approve', 'reject'])) {
-    $_SESSION['error'] = "Invalid request parameters.";
+    $_SESSION['error_message'] = "Invalid request parameters.";
     header("Location: dashboardX.php");
     exit();
 }
 
 if ($action === 'reject' && !in_array($rejection_reason, ['reassign_vehicle','reassign_driver', 'new_request'])) {
-    $_SESSION['error'] = "Invalid rejection reason provided.";
+    $_SESSION['error_message'] = "Invalid rejection reason provided.";
     header("Location: dashboardX.php");
     exit();
 }
@@ -34,7 +34,7 @@ try {
 
     if (!$request) {
         $pdo->rollBack();
-        $_SESSION['error'] = "Request not found or not in pending admin approval status.";
+        $_SESSION['error_message'] = "Request not found or not in pending admin approval status.";
         header("Location: dashboardX.php");
         exit();
     }
@@ -86,7 +86,7 @@ try {
         
         if ($pendingDriverConflict) {
             // Get driver name for better messaging
-            $driverStmt = $pdo->prepare("SELECT name FROM drivers WHERE id = :id");
+            $driverStmt = $pdo->prepare("SELECT name FROM users WHERE id = :id AND role = 'driver'");
             $driverStmt->execute([':id' => $request['assigned_driver_id']]);
             $driverName = $driverStmt->fetchColumn();
             
@@ -106,7 +106,7 @@ try {
         // If there are warnings, don't approve and send back to admin with details
         if (!empty($warnings)) {
             $pdo->rollBack();
-            $_SESSION['error'] = implode("<br>", $warnings);
+            $_SESSION['error_message'] = implode("<br>", $warnings);
             header("Location: dashboardX.php#adminRequests");
             exit();
         }
@@ -127,15 +127,15 @@ try {
             )
         ]);
 
-        $_SESSION['success'] = "Request approved successfully.";
+        $_SESSION['success_message'] = "Request approved successfully.";
 
     } elseif ($action === 'reject') {
         if ($rejection_reason === 'reassign_vehicle' || $rejection_reason === 'reassign_driver') {
             $new_status = 'rejected_reassign_dispatch';
-            $_SESSION['success'] = "Request rejected and sent back to dispatch for reassignment.";
+            $_SESSION['success_message'] = "Request rejected and sent back to dispatch for reassignment.";
         } else {
             $new_status = 'rejected_new_request';
-            $_SESSION['success'] = "Request rejected. Requestor needs to file a new request.";
+            $_SESSION['success_message'] = "Request rejected. Requestor needs to file a new request.";
         }
 
         $updateRequestStmt = $pdo->prepare("UPDATE requests SET status = :new_status, rejection_reason = :rejection_reason, assigned_vehicle_id = NULL, assigned_driver_id = NULL WHERE id = :id AND status = 'pending_admin_approval'");
@@ -160,7 +160,7 @@ try {
 } catch (Exception $e) {
     $pdo->rollBack();
     error_log("Process Request Error: " . $e->getMessage(), 0);
-    $_SESSION['error'] = "An error occurred while processing the request: " . $e->getMessage();
+    $_SESSION['error_message'] = "An error occurred while processing the request: " . $e->getMessage();
 }
 
 header("Location: dashboardX.php#adminRequests");
