@@ -53,6 +53,55 @@ try {
     error_log("Stats Error: " . $e->getMessage(), 0);
 }
 
+// Fetch approved trips for dispatch cancellation management
+$approvedTrips = [];
+try {
+    $stmt = $pdo->prepare("
+        SELECT 
+            r.id,
+            r.requestor_name,
+            r.requestor_email,
+            r.destination,
+            r.purpose,
+            r.departure_date,
+            r.return_date,
+            r.passenger_names,
+            v.plate_number,
+            v.make,
+            v.model,
+            d.name AS driver_name
+        FROM requests r
+        LEFT JOIN vehicles v ON v.id = r.assigned_vehicle_id
+        LEFT JOIN users d ON d.id = r.assigned_driver_id AND d.role = 'driver'
+        WHERE r.status = 'approved'
+          AND COALESCE(r.return_date, r.departure_date) >= :today
+        ORDER BY r.departure_date ASC
+    ");
+    $stmt->execute([':today' => $today]);
+    $approvedTrips = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    error_log("Dispatch Approved Trips Error: " . $e->getMessage(), 0);
+}
+
+// Categorize trips as upcoming or ongoing
+$upcomingTrips = [];
+$ongoingTrips = [];
+
+foreach ($approvedTrips as $trip) {
+    $departureDate = $trip['departure_date'] ?? $today;
+    $returnDate = $trip['return_date'] ?? $departureDate;
+    
+    if ($departureDate <= $today && $returnDate >= $today) {
+        $ongoingTrips[] = $trip;
+    } else {
+        $upcomingTrips[] = $trip;
+    }
+}
+
+$activeTripsCount = count($approvedTrips);
+$ongoingCount = count($ongoingTrips);
+$upcomingCount = count($upcomingTrips);
+
 
 $calendarEvents = [];
 $calendarRequestDetails = [];
@@ -281,64 +330,21 @@ try {
                     <div class="stat-number"><?= $availableDriversCount ?></div>
                     <div class="stat-label">Available Drivers</div>
                 </div>
+                
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div class="stat-icon text-primary">
+                            <i class="fas fa-route"></i>
+                        </div>
+                    </div>
+                    <div class="stat-number"><?= $activeTripsCount ?></div>
+                    <div class="stat-label">Active Trips</div>
+                </div>
+
             </div>
 
-            <div class="row g-4 dashboard-grid align-items-start">
-                <div class="col-lg-3">
-                    <?php $upcomingCount = count($upcomingReservations); ?>
-                    <aside class="upcoming-sidebar">
-                        <div class="card upcoming-card">
-                            <div class="upcoming-header d-flex align-items-center justify-content-between">
-                                <h3 class="h6 mb-0 text-uppercase">
-                                    <i class="fas fa-calendar-day me-2"></i>Upcoming Reservations
-                                </h3>
-                                <span class="badge bg-light text-dark fw-semibold"><?= $upcomingCount ?></span>
-                            </div>
-                            <p class="text-muted small mb-3">Next scheduled trips</p>
-                            <?php if (empty($upcomingReservations)): ?>
-                                <p class="text-muted small mb-0">No scheduled trips yet.</p>
-                            <?php else: ?>
-                                <div class="upcoming-list">
-                                    <?php foreach ($upcomingReservations as $reservation): ?>
-                                        <?php
-                                            $startDateValue = $reservation['departure_date'] ?? null;
-                                            $endDateValue = $reservation['return_date'] ?? $startDateValue;
-                                            $startDateObj = $startDateValue ? new DateTime($startDateValue) : null;
-                                            $endDateObj = ($endDateValue && $endDateValue !== $startDateValue) ? new DateTime($endDateValue) : null;
-                                            $rangeLabel = $startDateObj ? $startDateObj->format('M j') : 'Date TBD';
-                                            if ($startDateObj && $endDateObj) {
-                                                $sameMonth = $startDateObj->format('M') === $endDateObj->format('M');
-                                                $rangeLabel .= ' - ' . ($sameMonth ? $endDateObj->format('j') : $endDateObj->format('M j'));
-                                            }
-                                            $plateLabel = $reservation['plate_number'] ?? 'Vehicle TBD';
-                                        ?>
-                                        <div class="upcoming-item">
-                                            <div class="upcoming-date text-center">
-                                                <?php if ($startDateObj): ?>
-                                                    <span class="month"><?= strtoupper($startDateObj->format('M')) ?></span>
-                                                    <span class="day"><?= $startDateObj->format('d') ?></span>
-                                                <?php else: ?>
-                                                    <span class="month">TBD</span>
-                                                <?php endif; ?>
-                                            </div>
-                                            <div class="upcoming-details">
-                                                <div class="vehicle-label"><?= htmlspecialchars($plateLabel) ?></div>
-                                                <div class="upcoming-range text-muted small"><?= htmlspecialchars($rangeLabel) ?></div>
-                                                <div class="upcoming-meta">
-                                                    <i class="fas fa-user me-1"></i><?= htmlspecialchars($reservation['requestor_name']) ?>
-                                                </div>
-                                                <div class="upcoming-meta">
-                                                    <i class="fas fa-location-dot me-1"></i><?= htmlspecialchars($reservation['destination']) ?>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    <?php endforeach; ?>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                    </aside>
-                </div>
-                <div class="col-lg-9">
+            <div class="row g-4 dashboard-grid align-items-start">    
+                <div class="col-lg-12">
                     <div class="nav-container">
                         <ul class="nav nav-tabs" id="dispatchTabs" role="tablist">
                             <li class="nav-item" role="presentation">

@@ -306,7 +306,7 @@ function getStatusText($status) {
 $isLoggedIn = isset($_SESSION['user']);
 $isAdmin = $isLoggedIn && $_SESSION['user']['role'] === 'admin';
 $isEmployee = $isLoggedIn && $_SESSION['user']['role'] === 'employee';
-$isDispatch = $isLoggedIn && $_SESSION['user']['role'] === 'dispatch';
+
 $username = $isLoggedIn ? $_SESSION['user']['name'] : null;
 $user_role = $isLoggedIn ? $_SESSION['user']['role'] : 'guest';
 $user_id = $isLoggedIn ? $_SESSION['user']['id'] : null;
@@ -331,7 +331,6 @@ $isAssignedVehicle = false;
 $assignedVehicle = null;
 $pendingRequests = [];
 $approvedPendingDispatchRequests = [];
-$dispatchPendingRequests = [];
 $pendingAdminApprovalRequests = []; // New variable for admin pending approval
 
 // Employee-specific data and vehicle status
@@ -432,12 +431,6 @@ if ($isAdmin) {
 }
 
 
-// Dispatch-specific data
-if ($isDispatch) {
-    $stmt = $pdo->query("SELECT * FROM requests WHERE status = 'pending_dispatch_assignment' OR status = 'rejected_reassign_dispatch' ORDER BY request_date ASC");
-    $dispatchPendingRequests = $stmt->fetchAll(PDO::FETCH_ASSOC);
-}
-
 // Pre-fetch lookup data for all requests (employee, admin, dispatch) to avoid queries in HTML
 $vehicleLookup = [];
 $driverLookup = [];
@@ -473,10 +466,6 @@ if ($isAdmin) {
     $allRequestDriverIds = array_merge($allRequestDriverIds, array_column($pendingAdminApprovalRequests, 'assigned_driver_id'));
     $allRequestVehicleIds = array_merge($allRequestVehicleIds, array_column($dispatchForwardedRequests, 'assigned_vehicle_id'));
     $allRequestDriverIds = array_merge($allRequestDriverIds, array_column($dispatchForwardedRequests, 'assigned_driver_id'));
-}
-if ($isDispatch) {
-    $allRequestVehicleIds = array_merge($allRequestVehicleIds, array_column($dispatchPendingRequests, 'assigned_vehicle_id'));
-    $allRequestDriverIds = array_merge($allRequestDriverIds, array_column($dispatchPendingRequests, 'assigned_driver_id'));
 }
 
 $vehicleIds = array_filter(array_unique($allRequestVehicleIds));
@@ -562,8 +551,6 @@ if ($isAdmin) {
     $pendingRequestsCount = count(array_filter($myRequests, function($req) {
         return in_array($req['status'], ['pending_dispatch_assignment', 'pending_admin_approval', 'rejected_reassign_dispatch']);
     }));
-} elseif ($isDispatch) {
-    $pendingRequestsCount = count($dispatchPendingRequests);
 }
 
 // Calculate request restrictions for employees
@@ -769,8 +756,8 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
             <?php endif; ?>
 
 
-            <!-- Quick Stats Dashboard - Show for logged in admin/dispatch, or basic stats for guests -->
-            <?php if ($isAdmin || $isDispatch || !$isLoggedIn): ?>
+            <!-- Quick Stats Dashboard - Show for logged in admin, or basic stats for guests -->
+            <?php if ($isAdmin || !$isLoggedIn): ?>
             <div class="stats-grid">
                 <div class="stat-card">
                     <div class="stat-header">
@@ -792,7 +779,7 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                     <div class="stat-label">Vehicles in Maintenance</div>
                 </div>
 
-                <?php if ($isAdmin || $isDispatch): ?>
+                <?php if ($isAdmin): ?>
                 <div class="stat-card">
                     <div class="stat-header">
                         <div class="stat-icon text-warning">
@@ -848,7 +835,7 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
             <?php endif; ?>
 
             <?php if ($isEmployee): ?>
-                    <!-- <?php if ($employeeRequestStatus === 'rejected_reassign_dispatch'): ?>
+                    <?php if ($employeeRequestStatus === 'rejected_reassign_dispatch'): ?>
                     <div class="modern-alert">
                         <div class="alert alert-permanent alert-warning">
                             <strong>Request Under Reassignment:</strong> Your vehicle request was sent back to dispatch for reassignment.
@@ -891,7 +878,7 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                             <strong>Request Status:</strong> You have approved vehicle requests.
                         </div>
                     </div>
-                    <?php endif; ?> -->
+                    <?php endif; ?>
 
                         <!-- Show Pending Requests Alert -->
     <?php if (!empty($pendingRequests)): ?>
@@ -1067,9 +1054,8 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                                     <?= $upcomingCount ?>
                                 </span>
                             </div>
-                            <p class="text-muted small mb-3">Next scheduled trips</p>
                             <?php if (empty($upcomingReservations)): ?>
-                                <p class="text-muted small mb-0">No scheduled trips yet.</p>
+                                <p class=" text-secondary small pt-2 mb-0">No scheduled trips yet.</p>
                             <?php else: ?>
                                 <div class="upcoming-list">
                                     <?php foreach ($upcomingReservations as $reservation): ?>
@@ -1150,13 +1136,6 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                             <?php if ($pendingRequestsCount > 0): ?>
                             <span class="badge bg-danger ms-1"><?= $pendingRequestsCount ?></span>
                             <?php endif; ?>
-                        </a>
-                    </li>
-                    <?php endif; ?>
-                    <?php if ($isDispatch): ?>
-                    <li class="nav-item">
-                        <a class="nav-link" data-bs-toggle="tab" href="#dispatchRequests">
-                            <i class="fas fa-clipboard-check me-2"></i>Dispatch
                         </a>
                     </li>
                     <?php endif; ?>
@@ -1879,91 +1858,7 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
 </div>
                 <?php endif; ?>
 
-                <?php if ($isDispatch): ?>
-                <!-- Dispatch Requests Tab -->
-                <div class="tab-pane fade" id="dispatchRequests">
-                    <div class="table-container">
-                        <div class="section-header">
-                            <h2 class="section-title text-warning">
-                                <i class="fas fa-clipboard-check"></i>
-                                Requests Pending Dispatch Assignment
-                            </h2>
-                        </div>
-                        <div class="table-responsive">
-                            <table class="table">
-                                <thead>
-                                    <tr>
-                                        <th>Requestor Name</th>
-                                        <th>Departure</th>
-                                        <th>Return</th>
-                                        <th>Destination</th>
-                                        <th>Purpose</th>
-                                        <th>Passengers</th>
-                                        <th>Requested On</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php if (empty($dispatchPendingRequests)): ?>
-                                    <tr>
-                                        <td colspan="9" class="text-center">No requests currently pending vehicle
-                                            dispatch.</td>
-                                    </tr>
-                                    <?php else: ?>
-                                    <?php foreach ($dispatchPendingRequests as $request): ?>
-                                    <tr>
-                                        <td><?= htmlspecialchars($request['requestor_name']) ?></td>
-                                        <td>
-                                            <?php 
-                                            if (!empty($request['departure_date'])) {
-                                                echo htmlspecialchars($request['departure_date']);
-                                            } else {
-                                                echo '----';
-                                            }
-                                            ?>
-                                        </td>
-                                        <td>
-                                            <?php 
-                                            if (!empty($request['return_date'])) {
-                                                echo htmlspecialchars($request['return_date']);
-                                            } else {
-                                                echo '----';
-                                            }
-                                            ?>
-                                        </td>
-                                        <td><?= htmlspecialchars($request['destination']) ?></td>
-                                        <td><?= htmlspecialchars($request['purpose']) ?></td>
-                                        <td>
-                                            <?php 
-                                            if (!empty($request['passenger_names'])) {
-                                                $passengers = json_decode($request['passenger_names'], true);
-                                                if (is_array($passengers)) {
-                                                    echo htmlspecialchars(implode(', ', $passengers));
-                                                } else {
-                                                    echo htmlspecialchars($request['passenger_names']);
-                                                }
-                                            } else {
-                                                echo '----';
-                                            }
-                                            ?>
-                                        </td>
-                                        <td><?= htmlspecialchars($request['request_date']) ?></td>
-                                        <td>
-                                            <a href="assign_dispatch_vehicle.php?request_id=<?= $request['id'] ?>"
-                                                class="btn btn-sm btn-primary-modern">
-                                                <i class="fas fa-car-side"></i> Assign Vehicle
-                                            </a>
-                                        </td>
-                                    </tr>
-                                    <?php endforeach; ?>
-                                    <?php endif; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-                <?php endif; ?>
-
+                
             </div>
         </div>
     </div>
