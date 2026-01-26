@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/session.php';
 require_once __DIR__ . '/includes/schedule_utils.php';
+require_once __DIR__ . '/includes/lookup_utils.php';
 include 'error.php';
 require 'db.php';
 
@@ -34,7 +35,7 @@ $availableDriversCount = 0;
 try {
     $stmt = $pdo->query("SELECT COUNT(*) FROM vehicles WHERE status = 'available'");
     $availableVehiclesCount = $stmt->fetchColumn();
-    
+
     $stmt = $pdo->query("SELECT COUNT(*) FROM vehicles WHERE status = 'assigned'");
     $assignedVehiclesCount = $stmt->fetchColumn();
 
@@ -49,7 +50,7 @@ try {
         )
     ");
     $availableDriversCount = $stmt->fetchColumn();
-    } catch (PDOException $e) {
+} catch (PDOException $e) {
     error_log("Stats Error: " . $e->getMessage(), 0);
 }
 
@@ -90,7 +91,7 @@ $ongoingTrips = [];
 foreach ($approvedTrips as $trip) {
     $departureDate = $trip['departure_date'] ?? $today;
     $returnDate = $trip['return_date'] ?? $departureDate;
-    
+
     if ($departureDate <= $today && $returnDate >= $today) {
         $ongoingTrips[] = $trip;
     } else {
@@ -227,7 +228,6 @@ try {
     ");
     $upcomingStmt->execute();
     $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
-
 } catch (PDOException $e) {
     error_log("Dispatch Calendar Error: " . $e->getMessage(), 0);
 }
@@ -236,6 +236,7 @@ try {
 
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <title>Dispatch Dashboard</title>
@@ -247,6 +248,7 @@ try {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/main.min.css">
     <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
     <div class="container-fluid p-0">
         <!-- Modern Header -->
@@ -272,21 +274,21 @@ try {
 
         <div class="container-fluid px-4">
             <?php if (isset($_SESSION['success_message'])): ?>
-            <div class="modern-alert alert-success alert-dismissible fade show text-success" role="alert">
-                <i class="fas fa-check-circle alert-icon"></i>
-                <?= htmlspecialchars($_SESSION['success_message']); ?>
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
-            <?php unset($_SESSION['success_message']); ?>
+                <div class="modern-alert alert-success alert-dismissible fade show text-success" role="alert">
+                    <i class="fas fa-check-circle alert-icon"></i>
+                    <?= htmlspecialchars($_SESSION['success_message']); ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                <?php unset($_SESSION['success_message']); ?>
             <?php endif; ?>
 
             <?php if (isset($_SESSION['error_message'])): ?>
-            <div class="modern-alert alert-danger alert-dismissible fade show text-danger" role="alert">
-                <i class="fas fa-times-circle alert-icon"></i>
-                <?= htmlspecialchars($_SESSION['error_message']); ?>
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
-            <?php unset($_SESSION['error_message']); ?>
+                <div class="modern-alert alert-danger alert-dismissible fade show text-danger" role="alert">
+                    <i class="fas fa-times-circle alert-icon"></i>
+                    <?= htmlspecialchars($_SESSION['error_message']); ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                <?php unset($_SESSION['error_message']); ?>
             <?php endif; ?>
 
             <!-- Quick Stats Dashboard -->
@@ -330,7 +332,7 @@ try {
                     <div class="stat-number"><?= $availableDriversCount ?></div>
                     <div class="stat-label">Available Drivers</div>
                 </div>
-                
+
                 <div class="stat-card">
                     <div class="stat-header">
                         <div class="stat-icon text-primary">
@@ -343,7 +345,7 @@ try {
 
             </div>
 
-            <div class="row g-4 dashboard-grid align-items-start">    
+            <div class="row g-4 dashboard-grid align-items-start">
                 <div class="col-lg-12">
                     <div class="nav-container">
                         <ul class="nav nav-tabs" id="dispatchTabs" role="tablist">
@@ -362,7 +364,7 @@ try {
                             </li>
                         </ul>
                     </div>
-                    
+
                     <div class="tab-content" id="dispatchTabsContent">
                         <!-- Calendar Tab -->
                         <div class="tab-pane fade show active" id="calendar-pane" role="tabpanel" aria-labelledby="calendar-tab">
@@ -373,7 +375,6 @@ try {
                                         Vehicle Schedule Calendar
                                     </h2>
                                 </div>
-                                <p class="text-muted mb-3">View existing assignments to avoid conflicts while dispatching.</p>
                                 <div id="dispatchCalendar"></div>
                                 <div class="calendar-legend mt-3">
                                     <div class="legend-item"><span class="legend-dot legend-active"></span> In Use Today</div>
@@ -382,7 +383,7 @@ try {
                                 </div>
                             </div>
                         </div>
-                        
+
                         <!-- Pending Assignments Tab -->
                         <div class="tab-pane fade" id="pending-pane" role="tabpanel" aria-labelledby="pending-tab">
                             <div class="table-container">
@@ -392,75 +393,76 @@ try {
                                         Requests Pending Vehicle Assignment
                                     </h2>
                                     <?php if (!empty($pendingDispatchRequests)): ?>
-                                    <div class="badge bg-warning text-dark">
-                                        <?= count($pendingDispatchRequests) ?> Pending
-                                    </div>
+                                        <div class="badge bg-warning text-dark">
+                                            <?= count($pendingDispatchRequests) ?> Pending
+                                        </div>
                                     <?php endif; ?>
                                 </div>
-                                
+
                                 <?php if (!empty($pendingDispatchRequests)): ?>
-                                <div class="table-responsive">
-                                    <table class="table table-hover">
-                                        <thead>
-                                            <tr>
-                                                <th><i class="fas fa-user me-2"></i>Requestor Name</th>
-                                                <th><i class="fas fa-envelope me-2"></i>Email</th>
-                                                <th><i class="fas fa-map-marker-alt me-2"></i>Destination</th>
-                                                <th><i class="fas fa-clipboard me-2"></i>Purpose</th>
-                                                <th><i class="fas fa-calendar me-2"></i>Requested On</th>
-                                                <th><i class="fas fa-cogs me-2"></i>Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <?php foreach ($pendingDispatchRequests as $request): ?>
-                                            <tr>
-                                                <td>
-                                                    <div class="d-flex align-items-center">
-                                                        <?= htmlspecialchars($request['requestor_name']) ?>
-                                                    </div>
-                                                </td>
-                                                <td><?= htmlspecialchars($request['requestor_email']) ?></td>
-                                                <td>
-                                                    <span class="status-badge status-upcoming">
-                                                        <i class="fas fa-location-dot me-1"></i>
-                                                        <?= htmlspecialchars($request['destination']) ?>
-                                                    </span>
-                                                </td>
-                                                <td>
-                                                    <div class="detail-value" style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                                                        <?= htmlspecialchars($request['purpose']) ?>
-                                                    </div>
-                                                </td>
-                                                <td>
-                                                    <div>
-                                                        <i class="far fa-calendar-alt me-1"></i>
-                                                        <?= date('M j, Y', strtotime($request['request_date'])) ?>
-                                                        <small class="text-muted d-block">
-                                                            <?= date('g:i A', strtotime($request['request_date'])) ?>
-                                                        </small>
-                                                    </div>
-                                                </td>
-                                                <td>
-                                                    <div class="action-group">
-                                                        <a href="assign_dispatch_vehicle.php?request_id=<?= $request['id'] ?>" 
-                                                           class="btn-modern btn-primary-modern">
-                                                            <i class="fas fa-car-side me-1"></i>Assign Vehicle
-                                                        </a>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                            <?php endforeach; ?>
-                                        </tbody>
-                                    </table>
-                                </div>
-                                <?php else: ?>
-                                <div class="text-center py-5">
-                                    <div class="mb-3" style="font-size: 4rem; color: var(--border-color);">
-                                        <i class="fas fa-clipboard-check"></i>
+                                    <div class="table-responsive">
+                                        <table class="table table-hover">
+                                            <thead>
+                                                <tr>
+                                                    <th><i class="fas fa-user me-2"></i>Requestor Name</th>
+                                                    <th><i class="fas fa-envelope me-2"></i>Email</th>
+                                                    <th><i class="fas fa-map-marker-alt me-2"></i>Destination</th>
+                                                    <th><i class="fas fa-clipboard me-2"></i>Purpose</th>
+                                                    <th><i class="fas fa-calendar me-2"></i>Requested On</th>
+                                                    <th><i class="fas fa-cogs me-2"></i>Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php foreach ($pendingDispatchRequests as $request): ?>
+                                                    <tr>
+                                                        <td>
+                                                            <div class="d-flex align-items-center">
+                                                                <?= htmlspecialchars($request['requestor_name']) ?>
+                                                            </div>
+                                                        </td>
+                                                        <td><?= htmlspecialchars($request['requestor_email']) ?></td>
+                                                        <td>
+                                                            <span class="status-badge status-upcoming">
+                                                                <i class="fas fa-location-dot me-1"></i>
+                                                                <?= htmlspecialchars($request['destination']) ?>
+                                                            </span>
+                                                        </td>
+                                                        <td>
+                                                            <div class="detail-value" style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                                                <?= htmlspecialchars($request['purpose']) ?>
+                                                            </div>
+                                                        </td>
+                                                        <td>
+                                                            <div>
+                                                                <i class="far fa-calendar-alt me-1"></i>
+                                                                <?= date('M j, Y', strtotime($request['request_date'])) ?>
+                                                                <small class="text-muted d-block">
+                                                                    <?= date('g:i A', strtotime($request['request_date'])) ?>
+                                                                </small>
+                                                            </div>
+                                                        </td>
+                                                        <td>
+                                                            <div class="action-group">
+                                                                <a href="assign_dispatch_vehicle.php?request_id=<?= $request['id'] ?>"
+                                                                    class="btn-modern btn-primary-modern">
+                                                                    <i class="fas fa-car-side me-1"></i>Assign Vehicle
+                                                                </a>
+
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+                                            </tbody>
+                                        </table>
                                     </div>
-                                    <h3 class="mb-2">All Caught Up!</h3>
-                                    <p class="text-muted">No requests currently pending vehicle dispatch assignment.</p>
-                                </div>
+                                <?php else: ?>
+                                    <div class="text-center py-5">
+                                        <div class="mb-3" style="font-size: 4rem; color: var(--border-color);">
+                                            <i class="fas fa-clipboard-check"></i>
+                                        </div>
+                                        <h3 class="mb-2">All Caught Up!</h3>
+                                        <p class="text-muted">No requests currently pending vehicle dispatch assignment.</p>
+                                    </div>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -537,6 +539,8 @@ try {
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
+    <script src="js/calendar_utils.js"></script>
+    <script src="js/common.js"></script>
     <script>
         const dispatchCalendarEvents = <?= json_encode(array_values($calendarEvents), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
         const dispatchCalendarDetails = <?= json_encode($calendarRequestDetails, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_FORCE_OBJECT); ?>;
@@ -553,15 +557,15 @@ try {
                     }, 200);
                 }, 3000);
             }
-            
+
             // Store active tab in localStorage
             const tabButtons = document.querySelectorAll('#dispatchTabs button[data-bs-toggle="tab"]');
             tabButtons.forEach(button => {
-                button.addEventListener('shown.bs.tab', function (event) {
+                button.addEventListener('shown.bs.tab', function(event) {
                     localStorage.setItem('dispatchActiveTab', event.target.id);
                 });
             });
-            
+
             // Restore last active tab
             const savedTab = localStorage.getItem('dispatchActiveTab');
             if (savedTab) {
@@ -571,7 +575,7 @@ try {
                     tab.show();
                 }
             }
-            
+
             const calendarElement = document.getElementById('dispatchCalendar');
             const dispatchModalEl = document.getElementById('dispatchCalendarModal');
             const dispatchModalInstance = dispatchModalEl ? new bootstrap.Modal(dispatchModalEl) : null;
@@ -603,21 +607,21 @@ try {
                         }
                     }
                 });
-                
+
                 // Re-render calendar when tab is shown
                 const calendarTab = document.getElementById('calendar-tab');
                 if (calendarTab) {
-                    calendarTab.addEventListener('shown.bs.tab', function () {
+                    calendarTab.addEventListener('shown.bs.tab', function() {
                         if (calendar) {
                             setTimeout(() => calendar.render(), 100);
                         }
                     });
                 }
-                
+
                 // Initial render
                 calendar.render();
             }
-            
+
             // Add keyboard shortcuts
             document.addEventListener('keydown', function(e) {
                 // Alt + 1 = Calendar tab
@@ -654,13 +658,13 @@ try {
 
             // Add loading states to buttons
             document.querySelectorAll('.btn-modern').forEach(button => {
-                button.addEventListener('click', function (e) {
+                button.addEventListener('click', function(e) {
                     if (!this.classList.contains('disabled') && !this.classList.contains('info-card')) {
                         const originalText = this.innerHTML;
                         this.dataset.originalText = originalText;
                         this.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Loading...';
                         this.classList.add('loading');
-                        
+
                         setTimeout(() => {
                             if (this.dataset.originalText) {
                                 this.innerHTML = this.dataset.originalText;
@@ -698,7 +702,11 @@ try {
             if (!dateStr) return 'Date TBD';
             const date = new Date(`${dateStr}T00:00:00`);
             if (Number.isNaN(date.getTime())) return 'Date TBD';
-            return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+            return date.toLocaleDateString(undefined, {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric'
+            });
         }
 
         function dispatchFormatRange(start, end) {
@@ -792,4 +800,5 @@ try {
         }
     </script>
 </body>
+
 </html>

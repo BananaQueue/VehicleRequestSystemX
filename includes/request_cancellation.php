@@ -40,7 +40,7 @@ function handle_request_cancellation(PDO $pdo, int $requestId, string $cancelRea
         // Update the request status to cancelled
         $updateStmt = $pdo->prepare("
             UPDATE requests
-            SET status = 'cancelled',
+            SET status = 'cancelled',    
                 rejection_reason = NULL,
                 assigned_vehicle_id = NULL,
                 assigned_driver_id = NULL
