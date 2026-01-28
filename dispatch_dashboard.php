@@ -29,28 +29,29 @@ try {
 // Calculate stats
 $pendingDispatchCount = count($pendingDispatchRequests);
 
-// Get additional stats for dashboard
+// Get additional stats for dashboard - OPTIMIZED: Single query for all counts
 $availableVehiclesCount = 0;
 $assignedVehiclesCount = 0;
 $availableDriversCount = 0;
 try {
-    $stmt = $pdo->query("SELECT COUNT(*) FROM vehicles WHERE status = 'available'");
-    $availableVehiclesCount = $stmt->fetchColumn();
-
-    $stmt = $pdo->query("SELECT COUNT(*) FROM vehicles WHERE status = 'assigned'");
-    $assignedVehiclesCount = $stmt->fetchColumn();
-
-    // Drivers are determined by vehicle assignment, not status
-    // Count drivers not currently assigned to any vehicle
+    // OPTIMIZATION: Combined all stats into 1 query
     $stmt = $pdo->query("
-        SELECT COUNT(DISTINCT u.id) 
-        FROM users u 
-        WHERE u.role = 'driver' 
-        AND NOT EXISTS (
-            SELECT 1 FROM vehicles v WHERE v.driver_id = u.id AND v.status = 'assigned'
-        )
+        SELECT 
+            SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) as available_vehicles,
+            SUM(CASE WHEN status = 'assigned' THEN 1 ELSE 0 END) as assigned_vehicles,
+            (SELECT COUNT(DISTINCT u.id) 
+             FROM users u 
+             WHERE u.role = 'driver' 
+             AND NOT EXISTS (
+                SELECT 1 FROM vehicles v WHERE v.driver_id = u.id AND v.status = 'assigned'
+             )) as available_drivers
+        FROM vehicles
     ");
-    $availableDriversCount = $stmt->fetchColumn();
+    $stats = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    $availableVehiclesCount = (int)($stats['available_vehicles'] ?? 0);
+    $assignedVehiclesCount = (int)($stats['assigned_vehicles'] ?? 0);
+    $availableDriversCount = (int)($stats['available_drivers'] ?? 0);
 } catch (PDOException $e) {
     error_log("Stats Error: " . $e->getMessage(), 0);
 }
@@ -360,7 +361,7 @@ try {
                     <div class="tab-content" id="dispatchTabsContent">
                         <!-- Calendar Tab -->
                         <div class="tab-pane fade show active" id="calendar-pane" role="tabpanel" aria-labelledby="calendar-tab">
-                            <div class="table-container">
+                            <div class="calendar-container card p-3 mb-4">
                                 <div class="section-header">
                                     <h2 class="section-title text-white">
                                         <i class="fas fa-calendar-alt"></i>
@@ -474,6 +475,7 @@ try {
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
+                    <input type="hidden" id="dispatchModalRequestId">
                     <div class="row g-3">
                         <div class="col-md-6">
                             <p class="text-muted small mb-1">Vehicle</p>
@@ -524,6 +526,12 @@ try {
                             <p class="text-muted small mb-0">No audit activity recorded.</p>
                         </div>
                     </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <button type="button" class="btn btn-danger" id="dispatchCancelTripBtn" onclick="dispatchCancelTrip()">
+                            <i class="fas fa-ban me-2"></i>Cancel Trip
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -550,20 +558,39 @@ try {
                 }, 3000);
             }
 
-            // Store active tab in localStorage
+            // Store active tab in URL
             const tabButtons = document.querySelectorAll('#dispatchTabs button[data-bs-toggle="tab"]');
             tabButtons.forEach(button => {
                 button.addEventListener('shown.bs.tab', function(event) {
-                    localStorage.setItem('dispatchActiveTab', event.target.id);
+                    const tabId = event.target.id.replace('-tab', ''); // Extract tab name from button id (e.g., 'calendar-tab' -> 'calendar')
+                    const newUrl = new URL(window.location.href);
+                    newUrl.searchParams.set('tab', tabId);
+                    window.history.pushState({
+                        path: newUrl.href
+                    }, '', newUrl.href);
+
+                    // Scroll to tabs with smooth behavior
+                    const tabsElement = document.getElementById('dispatchTabs');
+                    if (tabsElement) {
+                        tabsElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
                 });
             });
 
-            // Restore last active tab
-            const savedTab = localStorage.getItem('dispatchActiveTab');
-            if (savedTab) {
-                const tabButton = document.getElementById(savedTab);
+            // Restore tab from URL parameter
+            const urlParams = new URLSearchParams(window.location.search);
+            const tabParam = urlParams.get('tab');
+            if (tabParam) {
+                const tabButton = document.getElementById(tabParam + '-tab');
                 if (tabButton) {
                     const tab = new bootstrap.Tab(tabButton);
+                    tab.show();
+                }
+            } else {
+                // Default to 'calendar' tab if no parameter
+                const defaultTab = document.getElementById('calendar-tab');
+                if (defaultTab) {
+                    const tab = new bootstrap.Tab(defaultTab);
                     tab.show();
                 }
             }
@@ -667,12 +694,12 @@ try {
                 });
             });
 
-            // Animate stat cards on load
+            // Animate stat cards on load - subtle animation
             const statCards = document.querySelectorAll('.stat-card');
             statCards.forEach((card, index) => {
                 setTimeout(() => {
-                    card.style.animation = 'fadeInUp 0.6s ease-out forwards';
-                }, index * 100);
+                    card.style.animation = 'fadeInSubtle 0.3s ease-out forwards';
+                }, index * 50);
             });
         });
 
@@ -688,6 +715,62 @@ try {
             if (el) {
                 el.textContent = value || '----';
             }
+        }
+
+        // Cancel trip from dispatch calendar modal
+        function dispatchCancelTrip() {
+            const requestId = document.getElementById('dispatchModalRequestId')?.value;
+            if (!requestId) {
+                alert('Unable to retrieve trip information.');
+                return;
+            }
+
+            if (!confirm('Are you sure you want to cancel this trip? This action cannot be undone.')) {
+                return;
+            }
+
+            // Prompt for cancellation reason
+            const reason = prompt('Please provide a reason for cancelling this trip (max 150 characters):');
+            if (reason === null) {
+                // User cancelled the prompt
+                return;
+            }
+
+            if (reason.trim().length === 0) {
+                alert('Please provide a cancellation reason.');
+                return;
+            }
+
+            if (reason.length > 150) {
+                alert('Cancellation reason must be 150 characters or less.');
+                return;
+            }
+
+            // Create a form and submit to cancel the trip
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = 'dispatch/cancel_trip.php';
+
+            const requestInput = document.createElement('input');
+            requestInput.type = 'hidden';
+            requestInput.name = 'request_id';
+            requestInput.value = requestId;
+
+            const reasonInput = document.createElement('input');
+            reasonInput.type = 'hidden';
+            reasonInput.name = 'cancel_reason';
+            reasonInput.value = reason;
+
+            const csrfInput = document.createElement('input');
+            csrfInput.type = 'hidden';
+            csrfInput.name = 'csrf_token';
+            csrfInput.value = document.querySelector('input[name="csrf_token"]')?.value || '';
+
+            form.appendChild(requestInput);
+            form.appendChild(reasonInput);
+            form.appendChild(csrfInput);
+            document.body.appendChild(form);
+            form.submit();
         }
 
         function populateDispatchModal(details) {

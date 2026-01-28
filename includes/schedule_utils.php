@@ -281,16 +281,224 @@ function sync_active_assignments(PDO $pdo): void
     // REMOVED: All driver release logic - drivers no longer have status field
 }
 
-function getStatusTextDispatch($status) {
-    $map = [
-        'pending_dispatch_assignment' => 'Awaiting Dispatch',
-        'pending_admin_approval' => 'Awaiting Admin Approval',
-        'approved' => 'Approved',
-        'rejected_new_request' => 'Rejected (New Request)',
-        'rejected_reassign_dispatch' => 'Rejected (Reassign Dispatch)',
-        'rejected' => 'Rejected',
-        'cancelled' => 'Cancelled',
-        'concluded' => 'Concluded',
-    ];
-    return $map[$status] ?? ucfirst(str_replace('_', ' ', $status));
+/**
+ * Get trip status display for drivers or employees
+ * Used in admin dashboard to show driver availability and employee trip status
+ * 
+ * @param array $personData User data (driver or employee) with 'id' and 'name' keys
+ * @param PDO $pdo Database connection
+ * @param bool $isDriver Whether checking driver or employee
+ * @return array Status info with 'status' text and 'status_class' CSS class
+ */
+function get_person_trip_status(array $personData, PDO $pdo, bool $isDriver = false): array
+{
+    $today = date('Y-m-d');
+
+    if ($isDriver) {
+        // For drivers, check if they're assigned to an active trip
+        $stmt = $pdo->prepare("
+            SELECT r.*, v.plate_number, r.departure_date, r.return_date
+            FROM requests r
+            INNER JOIN vehicles v ON v.id = r.assigned_vehicle_id
+            WHERE r.assigned_driver_id = :driver_id
+            AND r.status = 'approved'
+            AND COALESCE(r.return_date, r.departure_date) >= :today
+            ORDER BY r.departure_date ASC
+        ");
+        $stmt->execute([
+            'driver_id' => $personData['id'],
+            'today' => $today
+        ]);
+        $trips = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($trips)) {
+            return [
+                'status' => 'No Scheduled Trips',
+                'status_class' => 'status-available'
+            ];
+        }
+
+        // Check if currently on a trip (departure <= today <= return)
+        foreach ($trips as $trip) {
+            $departure = $trip['departure_date'] ?? $today;
+            $return = $trip['return_date'] ?? $departure;
+
+            if ($departure <= $today && $today <= $return) {
+                return [
+                    'status' => 'Currently On Trip: ' . $trip['plate_number'],
+                    'status_class' => 'status-assigned',
+                    'is_active' => true
+                ];
+            }
+        }
+
+        // Show upcoming trips
+        $tripCount = count($trips);
+        $nextTrip = $trips[0];
+        $nextDeparture = date('M j', strtotime($nextTrip['departure_date']));
+
+        if ($tripCount == 1) {
+            return [
+                'status' => '1 Trip: ' . $nextDeparture . ' (' . $nextTrip['plate_number'] . ')',
+                'status_class' => 'status-returning'
+            ];
+        } else {
+            return [
+                'status' => $tripCount . ' Trips: Next on ' . $nextDeparture,
+                'status_class' => 'status-returning'
+            ];
+        }
+    } else {
+        // For employees, check their trips as requestor or passenger
+        $employeeName = $personData['name'];
+        $employeeId = $personData['id'];
+
+        // Check for trips as requestor
+        $stmt = $pdo->prepare("
+            SELECT r.*, v.plate_number, r.departure_date, r.return_date
+            FROM requests r
+            LEFT JOIN vehicles v ON v.id = r.assigned_vehicle_id
+            WHERE r.user_id = :user_id
+            AND r.status = 'approved'
+            AND COALESCE(r.return_date, r.departure_date) >= :today
+            ORDER BY r.departure_date ASC
+        ");
+        $stmt->execute([
+            'user_id' => $employeeId,
+            'today' => $today
+        ]);
+        $requestorTrips = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Check for trips as passenger
+        $stmt = $pdo->prepare("
+            SELECT r.*, v.plate_number, r.departure_date, r.return_date, r.requestor_name
+            FROM requests r
+            LEFT JOIN vehicles v ON v.id = r.assigned_vehicle_id
+            WHERE r.status = 'approved'
+            AND COALESCE(r.return_date, r.departure_date) >= :today
+            AND JSON_SEARCH(r.passenger_names, 'one', :name) IS NOT NULL
+            ORDER BY r.departure_date ASC
+        ");
+        $stmt->execute([
+            'name' => $employeeName,
+            'today' => $today
+        ]);
+        $passengerTrips = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Check for assigned vehicle (currently on trip)
+        $stmt = $pdo->prepare("
+            SELECT plate_number FROM vehicles 
+            WHERE assigned_to = :name AND status = 'assigned' LIMIT 1
+        ");
+        $stmt->execute(['name' => $employeeName]);
+        $assignedVehicle = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($assignedVehicle) {
+            return [
+                'status' => 'Currently On Trip: ' . $assignedVehicle['plate_number'],
+                'status_class' => 'status-assigned',
+                'is_active' => true
+            ];
+        }
+
+        // Check for pending requests
+        $stmt = $pdo->prepare("
+            SELECT status FROM requests 
+            WHERE user_id = :user_id 
+            ORDER BY request_date DESC LIMIT 1
+        ");
+        $stmt->execute(['user_id' => $employeeId]);
+        $latestRequest = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($latestRequest && $latestRequest['status'] === 'pending_admin_approval') {
+            return [
+                'status' => 'Awaiting Admin Approval',
+                'status_class' => 'status-returning'
+            ];
+        }
+
+        // Combine all trips
+        $allTrips = array_merge($requestorTrips, $passengerTrips);
+
+        if (empty($allTrips)) {
+            // Check for rejected status
+            if ($latestRequest) {
+                switch ($latestRequest['status']) {
+                    case 'pending_dispatch_assignment':
+                        return [
+                            'status' => 'Awaiting Dispatch',
+                            'status_class' => 'status-returning'
+                        ];
+                    case 'rejected_new_request':
+                        return [
+                            'status' => 'Rejected (New Request Needed)',
+                            'status_class' => 'status-assigned'
+                        ];
+                    case 'rejected_reassign_dispatch':
+                        return [
+                            'status' => 'Rejected (Reassign Dispatch)',
+                            'status_class' => 'status-returning'
+                        ];
+                }
+            }
+
+            return [
+                'status' => 'No Scheduled Trips',
+                'status_class' => 'status-available'
+            ];
+        }
+
+        // Sort trips by date
+        usort($allTrips, function ($a, $b) {
+            return strcmp($a['departure_date'] ?? '', $b['departure_date'] ?? '');
+        });
+
+        // Check if currently on a trip
+        foreach ($allTrips as $trip) {
+            $departure = $trip['departure_date'] ?? $today;
+            $return = $trip['return_date'] ?? $departure;
+
+            if ($departure <= $today && $today <= $return) {
+                $vehicle = $trip['plate_number'] ?? 'TBD';
+                if (isset($trip['requestor_name']) && $trip['requestor_name'] !== $employeeName) {
+                    return [
+                        'status' => 'On Trip as Passenger: ' . $vehicle,
+                        'status_class' => 'status-assigned',
+                        'is_active' => true
+                    ];
+                } else {
+                    return [
+                        'status' => 'Currently On Trip: ' . $vehicle,
+                        'status_class' => 'status-assigned',
+                        'is_active' => true
+                    ];
+                }
+            }
+        }
+
+        // Show upcoming trips
+        $tripCount = count($allTrips);
+        $nextTrip = $allTrips[0];
+        $nextDeparture = date('M j', strtotime($nextTrip['departure_date'] ?? $today));
+        $vehicle = $nextTrip['plate_number'] ?? 'TBD';
+
+        if ($tripCount == 1) {
+            if (isset($nextTrip['requestor_name']) && $nextTrip['requestor_name'] !== $employeeName) {
+                return [
+                    'status' => '1 Trip as Passenger: ' . $nextDeparture,
+                    'status_class' => 'status-returning'
+                ];
+            } else {
+                return [
+                    'status' => '1 Trip: ' . $nextDeparture . ' (' . $vehicle . ')',
+                    'status_class' => 'status-returning'
+                ];
+            }
+        } else {
+            return [
+                'status' => $tripCount . ' Trips: Next on ' . $nextDeparture,
+                'status_class' => 'status-returning'
+            ];
+        }
+    }
 }

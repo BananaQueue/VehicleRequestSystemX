@@ -41,221 +41,6 @@ function sortVehiclesByStatus($vehicles, $priorities)
     return $result;
 }
 
-function getBookedTripsStatus($employeeOrDriver, $isDriver = false)
-{
-    global $pdo;
-
-    $today = date('Y-m-d');
-
-    if ($isDriver) {
-        // For drivers, check if they're assigned to an active trip
-        $stmt = $pdo->prepare("
-            SELECT r.*, v.plate_number, r.departure_date, r.return_date
-            FROM requests r
-            INNER JOIN vehicles v ON v.id = r.assigned_vehicle_id
-            WHERE r.assigned_driver_id = :driver_id
-            AND r.status = 'approved'
-            AND COALESCE(r.return_date, r.departure_date) >= :today
-            ORDER BY r.departure_date ASC
-        ");
-        $stmt->execute([
-            'driver_id' => $employeeOrDriver['id'],
-            'today' => $today
-        ]);
-        $trips = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        if (empty($trips)) {
-            return [
-                'status' => 'No Scheduled Trips',
-                'status_class' => 'status-available'
-            ];
-        }
-
-        // Check if currently on a trip (departure <= today <= return)
-        foreach ($trips as $trip) {
-            $departure = $trip['departure_date'] ?? $today;
-            $return = $trip['return_date'] ?? $departure;
-
-            if ($departure <= $today && $today <= $return) {
-                return [
-                    'status' => 'Currently On Trip: ' . $trip['plate_number'],
-                    'status_class' => 'status-assigned',
-                    'is_active' => true
-                ];
-            }
-        }
-
-        // Show upcoming trips
-        $tripCount = count($trips);
-        $nextTrip = $trips[0];
-        $nextDeparture = date('M j', strtotime($nextTrip['departure_date']));
-
-        if ($tripCount == 1) {
-            return [
-                'status' => '1 Trip: ' . $nextDeparture . ' (' . $nextTrip['plate_number'] . ')',
-                'status_class' => 'status-returning'
-            ];
-        } else {
-            return [
-                'status' => $tripCount . ' Trips: Next on ' . $nextDeparture,
-                'status_class' => 'status-returning'
-            ];
-        }
-    } else {
-        // For employees, check their trips as requestor or passenger
-        $employeeName = $employeeOrDriver['name'];
-        $employeeId = $employeeOrDriver['id'];
-
-        // Check for trips as requestor
-        $stmt = $pdo->prepare("
-            SELECT r.*, v.plate_number, r.departure_date, r.return_date
-            FROM requests r
-            LEFT JOIN vehicles v ON v.id = r.assigned_vehicle_id
-            WHERE r.user_id = :user_id
-            AND r.status = 'approved'
-            AND COALESCE(r.return_date, r.departure_date) >= :today
-            ORDER BY r.departure_date ASC
-        ");
-        $stmt->execute([
-            'user_id' => $employeeId,
-            'today' => $today
-        ]);
-        $requestorTrips = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        // Check for trips as passenger
-        $stmt = $pdo->prepare("
-            SELECT r.*, v.plate_number, r.departure_date, r.return_date, r.requestor_name
-            FROM requests r
-            LEFT JOIN vehicles v ON v.id = r.assigned_vehicle_id
-            WHERE r.status = 'approved'
-            AND COALESCE(r.return_date, r.departure_date) >= :today
-            AND JSON_SEARCH(r.passenger_names, 'one', :name) IS NOT NULL
-            ORDER BY r.departure_date ASC
-        ");
-        $stmt->execute([
-            'name' => $employeeName,
-            'today' => $today
-        ]);
-        $passengerTrips = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        // Check for assigned vehicle (currently on trip)
-        $stmt = $pdo->prepare("
-            SELECT plate_number FROM vehicles 
-            WHERE assigned_to = :name AND status = 'assigned' LIMIT 1
-        ");
-        $stmt->execute(['name' => $employeeName]);
-        $assignedVehicle = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($assignedVehicle) {
-            return [
-                'status' => 'Currently On Trip: ' . $assignedVehicle['plate_number'],
-                'status_class' => 'status-assigned',
-                'is_active' => true
-            ];
-        }
-
-        // Check for pending requests
-        $stmt = $pdo->prepare("
-            SELECT status FROM requests 
-            WHERE user_id = :user_id 
-            ORDER BY request_date DESC LIMIT 1
-        ");
-        $stmt->execute(['user_id' => $employeeId]);
-        $latestRequest = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($latestRequest && $latestRequest['status'] === 'pending_admin_approval') {
-            return [
-                'status' => 'Awaiting Admin Approval',
-                'status_class' => 'status-returning'
-            ];
-        }
-
-        // Combine all trips
-        $allTrips = array_merge($requestorTrips, $passengerTrips);
-
-        if (empty($allTrips)) {
-            // Check for rejected status
-            if ($latestRequest) {
-                switch ($latestRequest['status']) {
-                    case 'pending_dispatch_assignment':
-                        return [
-                            'status' => 'Awaiting Dispatch',
-                            'status_class' => 'status-returning'
-                        ];
-                    case 'rejected_new_request':
-                        return [
-                            'status' => 'Rejected (New Request Needed)',
-                            'status_class' => 'status-assigned'
-                        ];
-                    case 'rejected_reassign_dispatch':
-                        return [
-                            'status' => 'Rejected (Reassign Dispatch)',
-                            'status_class' => 'status-returning'
-                        ];
-                }
-            }
-
-            return [
-                'status' => 'No Scheduled Trips',
-                'status_class' => 'status-available'
-            ];
-        }
-
-        // Sort trips by date
-        usort($allTrips, function ($a, $b) {
-            return strcmp($a['departure_date'] ?? '', $b['departure_date'] ?? '');
-        });
-
-        // Check if currently on a trip
-        foreach ($allTrips as $trip) {
-            $departure = $trip['departure_date'] ?? $today;
-            $return = $trip['return_date'] ?? $departure;
-
-            if ($departure <= $today && $today <= $return) {
-                $vehicle = $trip['plate_number'] ?? 'TBD';
-                if (isset($trip['requestor_name']) && $trip['requestor_name'] !== $employeeName) {
-                    return [
-                        'status' => 'On Trip as Passenger: ' . $vehicle,
-                        'status_class' => 'status-assigned',
-                        'is_active' => true
-                    ];
-                } else {
-                    return [
-                        'status' => 'Currently On Trip: ' . $vehicle,
-                        'status_class' => 'status-assigned',
-                        'is_active' => true
-                    ];
-                }
-            }
-        }
-
-        // Show upcoming trips
-        $tripCount = count($allTrips);
-        $nextTrip = $allTrips[0];
-        $nextDeparture = date('M j', strtotime($nextTrip['departure_date'] ?? $today));
-        $vehicle = $nextTrip['plate_number'] ?? 'TBD';
-
-        if ($tripCount == 1) {
-            if (isset($nextTrip['requestor_name']) && $nextTrip['requestor_name'] !== $employeeName) {
-                return [
-                    'status' => '1 Trip as Passenger: ' . $nextDeparture,
-                    'status_class' => 'status-returning'
-                ];
-            } else {
-                return [
-                    'status' => '1 Trip: ' . $nextDeparture . ' (' . $vehicle . ')',
-                    'status_class' => 'status-returning'
-                ];
-            }
-        } else {
-            return [
-                'status' => $tripCount . ' Trips: Next on ' . $nextDeparture,
-                'status_class' => 'status-returning'
-            ];
-        }
-    }
-}
-
 
 // User Authentication and Role Check
 $isLoggedIn = isset($_SESSION['user']);
@@ -266,15 +51,8 @@ $username = $isLoggedIn ? $_SESSION['user']['name'] : null;
 $user_role = $isLoggedIn ? $_SESSION['user']['role'] : 'guest';
 $user_id = $isLoggedIn ? $_SESSION['user']['id'] : null;
 
-// Fetch vehicles - always available for viewing
-$stmt = $pdo->query("SELECT * FROM vehicles ORDER BY 
-    CASE 
-        WHEN status = 'assigned' THEN 0 
-        WHEN status = 'returning' THEN 1 
-        WHEN status = 'available' THEN 2
-        ELSE 3 
-    END, 
-    plate_number ASC");
+// Fetch vehicles - simple query, ordering done later by role-specific logic
+$stmt = $pdo->query("SELECT * FROM vehicles ORDER BY plate_number ASC");
 $vehicles = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Initialize variables
@@ -331,11 +109,11 @@ if ($isEmployee) {
 
 // Admin-specific data
 if ($isAdmin) {
-    // Fetch employees
-    $stmt = $pdo->query("SELECT * FROM users WHERE role != 'admin'");
+    // Fetch employees (dispatch + regular employees, exclude admin)
+    $stmt = $pdo->query("SELECT * FROM users WHERE role IN ('employee', 'dispatch') ORDER BY name ASC");
     $employees = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Fetch drivers with assignment status - optimized approach
+    // Fetch drivers with assignment status
     $stmt = $pdo->query("SELECT id, name, email, phone, position FROM users WHERE role = 'driver' ORDER BY name ASC");
     $driversRaw = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -344,6 +122,40 @@ if ($isAdmin) {
     $stmt = $pdo->query("SELECT driver_id, plate_number FROM vehicles WHERE status = 'assigned' AND driver_id IS NOT NULL");
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
         $driverAssignments[$row['driver_id']] = $row['plate_number'];
+    }
+
+    // OPTIMIZATION: Fetch ALL driver trips in one batch query instead of per-driver
+    $today = date('Y-m-d');
+    $driverIds = array_column($driversRaw, 'id');
+    $driverTripData = [];
+    
+    if (!empty($driverIds)) {
+        $placeholders = implode(',', array_fill(0, count($driverIds), '?'));
+        $stmt = $pdo->prepare("
+            SELECT 
+                r.assigned_driver_id,
+                r.id as request_id,
+                r.status,
+                r.departure_date,
+                r.return_date,
+                v.plate_number
+            FROM requests r
+            INNER JOIN vehicles v ON v.id = r.assigned_vehicle_id
+            WHERE r.assigned_driver_id IN ($placeholders)
+            AND r.status = 'approved'
+            AND COALESCE(r.return_date, r.departure_date) >= ?
+            ORDER BY r.assigned_driver_id, r.departure_date ASC
+        ");
+        $stmt->execute(array_merge($driverIds, [$today]));
+        
+        // Group trips by driver
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $driverId = $row['assigned_driver_id'];
+            if (!isset($driverTripData[$driverId])) {
+                $driverTripData[$driverId] = [];
+            }
+            $driverTripData[$driverId][] = $row;
+        }
     }
 
     // Add assignment status to drivers and sort
@@ -356,8 +168,52 @@ if ($isAdmin) {
         $driver['assigned_vehicle'] = $driverAssignments[$driver['id']] ?? null;
         $driver['is_assigned'] = isset($driverAssignments[$driver['id']]);
 
-        // Add booked trips status for each driver
-        $driver['trip_status'] = getBookedTripsStatus($driver, true);
+        // OPTIMIZATION: Use pre-fetched trip data instead of per-driver query
+        $trips = $driverTripData[$driver['id']] ?? [];
+        
+        if (empty($trips)) {
+            $driver['trip_status'] = [
+                'status' => 'No Scheduled Trips',
+                'status_class' => 'status-available'
+            ];
+        } else {
+            // Check if currently on a trip (departure <= today <= return)
+            $tripStatus = null;
+            foreach ($trips as $trip) {
+                $departure = $trip['departure_date'] ?? $today;
+                $return = $trip['return_date'] ?? $departure;
+
+                if ($departure <= $today && $today <= $return) {
+                    $tripStatus = [
+                        'status' => 'Currently On Trip: ' . $trip['plate_number'],
+                        'status_class' => 'status-assigned',
+                        'is_active' => true
+                    ];
+                    break;
+                }
+            }
+            
+            if ($tripStatus) {
+                $driver['trip_status'] = $tripStatus;
+            } else {
+                // Show upcoming trips
+                $tripCount = count($trips);
+                $nextTrip = $trips[0];
+                $nextDeparture = date('M j', strtotime($nextTrip['departure_date']));
+
+                if ($tripCount == 1) {
+                    $driver['trip_status'] = [
+                        'status' => '1 Trip: ' . $nextDeparture . ' (' . $nextTrip['plate_number'] . ')',
+                        'status_class' => 'status-returning'
+                    ];
+                } else {
+                    $driver['trip_status'] = [
+                        'status' => $tripCount . ' Trips: Next on ' . $nextDeparture,
+                        'status_class' => 'status-returning'
+                    ];
+                }
+            }
+        }
 
         if ($driver['is_assigned']) {
             $assignedDrivers[] = $driver;
@@ -368,34 +224,40 @@ if ($isAdmin) {
 
     $drivers = array_merge($assignedDrivers, $availableDrivers);
 
-    // Fetch requests pending admin approval
-    $stmt = $pdo->query("SELECT * FROM requests WHERE status = 'pending_admin_approval' ORDER BY request_date ASC");
-    $pendingAdminApprovalRequests = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    // Fetch requests forwarded to dispatch (pending dispatch assignment and rejected for reassignment)
-    $stmt = $pdo->query("SELECT * FROM requests WHERE status IN ('pending_dispatch_assignment', 'rejected_reassign_dispatch') ORDER BY request_date ASC");
-    $dispatchForwardedRequests = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    // Fetch requests pending admin approval and dispatch assignment - OPTIMIZED: Combined into 1 query
+    $pendingAdminApprovalRequests = [];
+    $dispatchForwardedRequests = [];
+    
+    $stmt = $pdo->query("
+        SELECT * FROM requests 
+        WHERE status IN ('pending_admin_approval', 'pending_dispatch_assignment', 'rejected_reassign_dispatch') 
+        ORDER BY request_date ASC
+    ");
+    $allPendingRequests = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Separate into categories
+    foreach ($allPendingRequests as $req) {
+        if ($req['status'] === 'pending_admin_approval') {
+            $pendingAdminApprovalRequests[] = $req;
+        } else {
+            $dispatchForwardedRequests[] = $req;
+        }
+    }
 
     // Get employee status information
     $employeeStatusData = [];
 
     foreach ($employees as $employee) {
-        $employeeStatusData[$employee['id']] = getBookedTripsStatus($employee, false);
+        $employeeStatusData[$employee['id']] = get_person_trip_status($employee, $pdo, false);
     }
 }
 
 
-// Pre-fetch lookup data for all requests (employee, admin, dispatch) to avoid queries in HTML
+// Pre-fetch lookup data for requests
 $vehicleLookup = [];
 $driverLookup = [];
 
-$allRequestVehicleIds = [];
-$allRequestDriverIds = [];
-
 if ($isEmployee) {
-    $allRequestVehicleIds = array_merge($allRequestVehicleIds, array_column($myRequests, 'assigned_vehicle_id'));
-    $allRequestDriverIds = array_merge($allRequestDriverIds, array_column($myRequests, 'assigned_driver_id'));
-
     // Categorize requests for display in alerts
     $pendingRequests = [];
     $approvedRequests = [];
@@ -416,12 +278,8 @@ if ($isEmployee) {
     }
 }
 if ($isAdmin) {
-    $allRequestVehicleIds = array_merge($allRequestVehicleIds, array_column($pendingAdminApprovalRequests, 'assigned_vehicle_id'));
-    $allRequestDriverIds = array_merge($allRequestDriverIds, array_column($pendingAdminApprovalRequests, 'assigned_driver_id'));
-    $allRequestVehicleIds = array_merge($allRequestVehicleIds, array_column($dispatchForwardedRequests, 'assigned_vehicle_id'));
-    $allRequestDriverIds = array_merge($allRequestDriverIds, array_column($dispatchForwardedRequests, 'assigned_driver_id'));
-
-    $lookups = build_request_lookups($pdo, [$myRequests, $pendingAdminApprovalRequests, $dispatchForwardedRequests]);
+    // Build lookups from all request types
+    $lookups = build_request_lookups($pdo, [$pendingAdminApprovalRequests, $dispatchForwardedRequests]);
     $vehicleLookup = $lookups['vehicles'];
     $driverLookup = $lookups['drivers'];
 }
@@ -1794,6 +1652,7 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                         </div>
                         <div class="modal-body">
+                            <input type="hidden" id="calendarModalRequestId">
                             <div class="row g-3">
                                 <div class="col-md-6">
                                     <p class="text-muted small mb-1">Vehicle</p>
@@ -1844,6 +1703,12 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                                     <p class="text-muted small mb-0">No audit activity recorded.</p>
                                 </div>
                             </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                            <button type="button" class="btn btn-danger" id="cancelTripBtn" onclick="cancelTrip()">
+                                <i class="fas fa-ban me-2"></i>Cancel Trip
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -2083,6 +1948,14 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                 cancelModal.show();
             }
 
+            // Cancel trip from calendar modal
+            function cancelTrip() {
+                const requestId = document.getElementById('calendarModalRequestId')?.value;
+                if (requestId) {
+                    showCancelModal(requestId);
+                }
+            }
+
             // Character counter for cancel reason
             document.addEventListener('DOMContentLoaded', function() {
                 var cancelReasonInput = document.getElementById('cancel_reason');
@@ -2134,6 +2007,14 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                     }, 5000);
                 });
 
+                // Animate stat cards on load - subtle animation
+                const statCards = document.querySelectorAll('.stat-card');
+                statCards.forEach((card, index) => {
+                    setTimeout(() => {
+                        card.style.animation = 'fadeInSubtle 0.3s ease-out forwards';
+                    }, index * 50);
+                });
+
                 // Handle initial tab activation based on URL hash or default
                 const urlParams = new URLSearchParams(window.location.search);
                 const tab = urlParams.get('tab');
@@ -2160,6 +2041,12 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                         window.history.pushState({
                             path: newUrl.href
                         }, '', newUrl.href);
+
+                        // Scroll to tabs with smooth behavior
+                        const tabsElement = document.getElementById('dashboardTabs');
+                        if (tabsElement) {
+                            tabsElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
                     });
                 });
             });
@@ -2455,7 +2342,40 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                 }
             });
         </script>
+        <script>
+            // Helper function to detect unsaved form data
+            function hasUnsavedFormData() {
+                const forms = document.querySelectorAll('form');
+                for (let form of forms) {
+                    const inputs = form.querySelectorAll('input, select, textarea');
+                    for (let input of inputs) {
+                        // Skip hidden and CSRF token inputs
+                        if (input.type === 'hidden' || input.name === 'csrf_token') continue;
+                        
+                        // Check if value has been modified from initial value
+                        if (input.value !== input.defaultValue) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
+            // Auto-refresh dashboard every 30 seconds with protection
+            setInterval(function() {
+                // Don't refresh if:
+                // 1. A modal is open (form in progress)
+                // 2. A button is loading
+                // 3. Form data has been modified
+                if (!document.querySelector('.modal.show') && 
+                    !document.querySelector('.btn-modern.loading') &&
+                    !hasUnsavedFormData()) {
+                    window.location.reload();
+                }
+            }, 30000);
+        </script>
         <script src="js/common.js"></script>
+
 </body>
 
 </html>

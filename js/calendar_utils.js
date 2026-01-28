@@ -87,6 +87,12 @@ const CalendarUtils = {
         this.setModalText(`${modalPrefix}ModalPurpose`, details.purpose || '----');
         this.setModalText(`${modalPrefix}ModalPassengers`, details.passengers || '----');
 
+        // Set request ID for cancel functionality
+        const requestIdElement = document.getElementById(`${modalPrefix}ModalRequestId`);
+        if (requestIdElement) {
+            requestIdElement.value = details.id || '';
+        }
+
         // Populate audit timeline
         this.populateAuditTimeline(details.audit, `${modalPrefix}AuditTimeline`);
     },

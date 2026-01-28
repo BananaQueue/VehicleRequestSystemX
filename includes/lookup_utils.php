@@ -61,27 +61,6 @@ function get_status_badge_class(string $status): string {
  * @param bool $showIcon Whether to show icon
  * @return string HTML badge
  */
-function render_status_badge(string $status, bool $showIcon = true): string {
-    $class = get_status_badge_class($status);
-    $text = get_status_display_text($status);
-    
-    $icons = [
-        'status-available' => 'fa-check-circle',
-        'status-assigned' => 'fa-user',
-        'status-returning' => 'fa-clock',
-        'status-maintenance' => 'fa-tools'
-    ];
-    
-    $icon = $showIcon && isset($icons[$class]) 
-        ? '<i class="fas ' . $icons[$class] . ' me-1"></i>' 
-        : '';
-    
-    return '<span class="status-badge ' . htmlspecialchars($class) . '">' 
-         . $icon 
-         . htmlspecialchars($text) 
-         . '</span>';
-}
-
 /**
  * Build lookup arrays for vehicles and drivers from multiple request arrays
  * 
@@ -203,29 +182,4 @@ function format_passenger_names(?string $passengerNamesJson, string $default = '
  * 
  * @param array $request Request data
  * @param array $vehicleLookup Vehicle lookup array
- * @param array $driverLookup Driver lookup array
- * @return array ['vehicle' => '...', 'driver' => '...']
- */
-function get_request_assignment_display(array $request, array $vehicleLookup, array $driverLookup): array {
-    $vehicleDisplay = '----';
-    $driverDisplay = '----';
-    
-    // Handle pending admin approval status
-    if ($request['status'] === 'pending_admin_approval') {
-        if ($request['assigned_vehicle_id']) {
-            $vehicleDisplay = 'Pending Admin Approval';
-        }
-        if ($request['assigned_driver_id']) {
-            $driverDisplay = 'Pending Admin Approval';
-        }
-    } else {
-        // Normal display
-        $vehicleDisplay = get_vehicle_plate($vehicleLookup, $request['assigned_vehicle_id']);
-        $driverDisplay = get_driver_name($driverLookup, $request['assigned_driver_id']);
-    }
-    
-    return [
-        'vehicle' => $vehicleDisplay,
-        'driver' => $driverDisplay
-    ];
-}
+*/

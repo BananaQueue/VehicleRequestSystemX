@@ -121,17 +121,97 @@ function validatePassengerAvailability($pdo, $passengerName, $excludeRequestId =
     return ['available' => true, 'message' => 'Available'];
 }
 
+/**
+ * OPTIMIZED: Batch fetch all employee availability instead of N queries
+ * Combines constraint checks into single multi-join query
+ */
 function getEmployeeListWithAvailability($pdo, $excludeRequestId = null) {
-    $stmt = $pdo->query("SELECT id, name, email, position FROM users WHERE role = 'employee' ORDER BY name ASC");
-    $employees = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    foreach ($employees as &$employee) {
-        $validation = validatePassengerAvailability($pdo, $employee['name'], $excludeRequestId);
-        $employee['is_available'] = $validation['available'];
-        $employee['unavailable_reason'] = $validation['message'] ?? '';
-        $employee['validation_details'] = $validation;
+    $currentDate = date('Y-m-d');
+    $today = $currentDate;
+    
+    // OPTIMIZATION: Single query gets all employees + their constraint violations
+    $stmt = $pdo->prepare("
+        SELECT 
+            u.id,
+            u.name,
+            u.email,
+            u.position,
+            -- Check for active passenger request
+            MAX(CASE WHEN 
+                JSON_SEARCH(r.passenger_names, 'one', u.name) IS NOT NULL
+                AND r.status = 'approved'
+                AND r.departure_date <= ?
+                AND r.return_date >= ?
+                THEN 'has_active_passenger_request' 
+            END) as violation_type,
+            MAX(CASE WHEN 
+                JSON_SEARCH(r.passenger_names, 'one', u.name) IS NOT NULL
+                AND r.status = 'approved'
+                AND r.departure_date <= ?
+                AND r.return_date >= ?
+            THEN r.id END) as active_request_id,
+            -- Check for assigned vehicle
+            MAX(CASE WHEN 
+                v1.assigned_to = u.name 
+                AND v1.status = 'assigned' 
+            THEN v1.plate_number END) as assigned_vehicle,
+            -- Check for returning vehicle
+            MAX(CASE WHEN 
+                v2.returned_by = u.name 
+                AND v2.status = 'returning' 
+            THEN v2.plate_number END) as returning_vehicle
+        FROM users u
+        LEFT JOIN requests r ON r.status = 'approved'
+        LEFT JOIN vehicles v1 ON v1.assigned_to = u.name AND v1.status = 'assigned'
+        LEFT JOIN vehicles v2 ON v2.returned_by = u.name AND v2.status = 'returning'
+        WHERE u.role = 'employee'
+        GROUP BY u.id, u.name, u.email, u.position
+        ORDER BY u.name ASC
+    ");
+    
+    $stmt->execute([$today, $today, $today, $today]);
+    $employeeData = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Process results to add availability flags
+    foreach ($employeeData as &$employee) {
+        $employee['is_available'] = true;
+        $employee['unavailable_reason'] = '';
+        $employee['validation_details'] = ['available' => true];
+        
+        // Check violations
+        if ($employee['violation_type'] === 'has_active_passenger_request') {
+            $employee['is_available'] = false;
+            $employee['unavailable_reason'] = 'This employee is already an active passenger on an approved vehicle request.';
+            $employee['validation_details'] = [
+                'available' => false,
+                'reason' => 'has_active_passenger_request',
+                'message' => $employee['unavailable_reason']
+            ];
+        } elseif (!empty($employee['assigned_vehicle'])) {
+            $employee['is_available'] = false;
+            $employee['unavailable_reason'] = 'This employee has an assigned vehicle: ' . $employee['assigned_vehicle'];
+            $employee['validation_details'] = [
+                'available' => false,
+                'reason' => 'has_assigned_vehicle',
+                'message' => $employee['unavailable_reason']
+            ];
+        } elseif (!empty($employee['returning_vehicle'])) {
+            $employee['is_available'] = false;
+            $employee['unavailable_reason'] = 'This employee is returning vehicle: ' . $employee['returning_vehicle'];
+            $employee['validation_details'] = [
+                'available' => false,
+                'reason' => 'returning_vehicle',
+                'message' => $employee['unavailable_reason']
+            ];
+        }
+        
+        // Clean up temp columns
+        unset($employee['violation_type']);
+        unset($employee['active_request_id']);
+        unset($employee['assigned_vehicle']);
+        unset($employee['returning_vehicle']);
     }
-
-    return $employees;
+    
+    return $employeeData;
 }
 ?>

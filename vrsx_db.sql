@@ -151,7 +151,12 @@ ALTER TABLE `requests`
   ADD KEY `user_id` (`user_id`),
   ADD KEY `fk_assigned_vehicle` (`assigned_vehicle_id`),
   ADD KEY `fk_assigned_driver` (`assigned_driver_id`),
-  ADD KEY `idx_request_status` (`status`);
+  ADD KEY `idx_request_status` (`status`),
+  ADD KEY `idx_assigned_vehicle_status` (`assigned_vehicle_id`, `status`),
+  ADD KEY `idx_assigned_driver_status` (`assigned_driver_id`, `status`),
+  ADD KEY `idx_request_user_status` (`user_id`, `status`),
+  ADD KEY `idx_status_dates` (`status`, `departure_date`, `return_date`),
+  ADD FULLTEXT KEY `idx_passenger_names` (`passenger_names`);
 
 --
 -- Indexes for table `request_audit_logs`

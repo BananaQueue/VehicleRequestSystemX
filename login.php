@@ -11,10 +11,7 @@ require_once __DIR__ . '/includes/session.php';
 require 'db.php'; // Include your database connection
 $error = ''; // Initialize error variable
 
-
-require 'db.php'; // Include your database connection
-
-    if ($_SERVER["REQUEST_METHOD"] == "POST") {
+if ($_SERVER["REQUEST_METHOD"] == "POST") {
         validate_csrf_token_post(); // Validate CSRF token for POST requests
         $email = $_POST['email'];
         $password = $_POST['password'];
