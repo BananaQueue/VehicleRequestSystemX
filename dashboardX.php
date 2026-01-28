@@ -10,23 +10,6 @@ sync_active_assignments($pdo);
 
 
 // Helper Functions
-function canEmployeeRequest($employeeRequestStatus, $isAssignedVehicle)
-{
-    //$hasPendingRequest = in_array($employeeRequestStatus, [
-    //'pending_dispatch_assignment', 
-    //'pending_admin_approval', 
-    //'rejected_reassign_dispatch'
-    //]);
-
-    //$hasApprovedWithVehicle = ($employeeRequestStatus === 'approved' && $isAssignedVehicle);
-
-    //return !$hasPendingRequest && !$hasApprovedWithVehicle;
-
-    // Allow employees to make requests at any time
-    return true;
-}
-
-
 function sortVehiclesByStatus($vehicles, $priorities)
 {
     $groups = [];
@@ -274,39 +257,6 @@ function getBookedTripsStatus($employeeOrDriver, $isDriver = false)
 }
 
 
-
-function getStatusBadgeClass($status)
-{
-    $statusMap = [
-        'pending_dispatch_assignment' => 'status-returning',
-        'pending_admin_approval' => 'status-returning',
-        'approved' => 'status-available',
-        'concluded' => 'status-available',
-        'cancelled' => 'status-assigned',
-        'rejected_new_request' => 'status-assigned',
-        'rejected_reassign_dispatch' => 'status-returning',
-        'rejected' => 'status-assigned'
-    ];
-
-    return $statusMap[$status] ?? '';
-}
-
-function getStatusText($status)
-{
-    $statusMap = [
-        'pending_dispatch_assignment' => 'Awaiting Dispatch',
-        'pending_admin_approval' => 'Awaiting Admin Approval',
-        'approved' => 'Approved',
-        'concluded' => 'Concluded',
-        'cancelled' => 'Cancelled',
-        'rejected_new_request' => 'Rejected (New Request Needed)',
-        'rejected_reassign_dispatch' => 'Rejected (Reassign Dispatch)',
-        'rejected' => 'Rejected'
-    ];
-
-    return $statusMap[$status] ?? ucfirst($status);
-}
-
 // User Authentication and Role Check
 $isLoggedIn = isset($_SESSION['user']);
 $isAdmin = $isLoggedIn && $_SESSION['user']['role'] === 'admin';
@@ -470,28 +420,13 @@ if ($isAdmin) {
     $allRequestDriverIds = array_merge($allRequestDriverIds, array_column($pendingAdminApprovalRequests, 'assigned_driver_id'));
     $allRequestVehicleIds = array_merge($allRequestVehicleIds, array_column($dispatchForwardedRequests, 'assigned_vehicle_id'));
     $allRequestDriverIds = array_merge($allRequestDriverIds, array_column($dispatchForwardedRequests, 'assigned_driver_id'));
+
+    $lookups = build_request_lookups($pdo, [$myRequests, $pendingAdminApprovalRequests, $dispatchForwardedRequests]);
+    $vehicleLookup = $lookups['vehicles'];
+    $driverLookup = $lookups['drivers'];
 }
 
-$vehicleIds = array_filter(array_unique($allRequestVehicleIds));
-$driverIds = array_filter(array_unique($allRequestDriverIds));
 
-if (!empty($vehicleIds)) {
-    $placeholders = str_repeat('?,', count($vehicleIds) - 1) . '?';
-    $stmt = $pdo->prepare("SELECT id, plate_number FROM vehicles WHERE id IN ($placeholders)");
-    $stmt->execute(array_values($vehicleIds));
-    while ($row = $stmt->fetch()) {
-        $vehicleLookup[$row['id']] = $row['plate_number'];
-    }
-}
-
-if (!empty($driverIds)) {
-    $placeholders = str_repeat('?,', count($driverIds) - 1) . '?';
-    $stmt = $pdo->prepare("SELECT id, name FROM users WHERE id IN ($placeholders) AND role = 'driver'");
-    $stmt->execute(array_values($driverIds));
-    while ($row = $stmt->fetch()) {
-        $driverLookup[$row['id']] = $row['name'];
-    }
-}
 
 // Sort vehicles based on user role
 if ($isAdmin) {
@@ -557,11 +492,6 @@ if ($isAdmin) {
     }));
 }
 
-// Calculate request restrictions for employees
-$cannotRequest = false;
-if ($isEmployee) {
-    $cannotRequest = !canEmployeeRequest($employeeRequestStatus, $isAssignedVehicle);
-}
 
 // Calendar + Upcoming reservations data
 $calendarRequests = [];
@@ -629,15 +559,8 @@ foreach ($calendarRequests as $calendarRequest) {
         $eventState = 'active';
     }
 
-    $passengerDisplay = '----';
-    if (!empty($calendarRequest['passenger_names'])) {
-        $decodedPassengers = json_decode($calendarRequest['passenger_names'], true);
-        if (is_array($decodedPassengers)) {
-            $passengerDisplay = implode(', ', $decodedPassengers);
-        } else {
-            $passengerDisplay = $calendarRequest['passenger_names'];
-        }
-    }
+    $passengerDisplay = format_passenger_names($calendarRequest['passenger_names']);
+
 
     $calendarEvents[] = [
         'id' => $calendarRequest['id'],
@@ -658,7 +581,7 @@ foreach ($calendarRequests as $calendarRequest) {
         'purpose' => $calendarRequest['purpose'],
         'start' => $eventStart,
         'end' => $eventEnd,
-        'status' => getStatusText($calendarRequest['status']),
+        'status' => get_status_display_text($calendarRequest['status']),
         'driver' => $calendarRequest['driver_name'] ?? 'TBD',
         'passengers' => $passengerDisplay,
         'audit' => $auditLogsByRequest[$calendarRequest['id']] ?? []
@@ -697,7 +620,7 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/main.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.20/main.min.css">
     <link rel="stylesheet" href="styles.css">
 </head>
 
@@ -1229,8 +1152,6 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
 
                         <!-- Vehicles Tab -->
                         <div class="tab-pane fade" id="vehicles">
-
-
                             <!-- Action Bar -->
                             <div class="section-header">
                                 <h2 class="section-title">
@@ -1465,8 +1386,8 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                                                                 ?>
                                                             </td>
                                                             <td>
-                                                                <span class="status-badge <?= getStatusBadgeClass($request['status']) ?>">
-                                                                    <?= getStatusText($request['status']) ?>
+                                                                <span class="status-badge <?= get_status_badge_class($request['status']) ?>">
+                                                                    <?= get_status_display_text($request['status']) ?>
                                                                 </span>
                                                             </td>
                                                             <td>
@@ -1674,15 +1595,7 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                                                 <?php else: ?>
                                                     <?php foreach ($pendingAdminApprovalRequests as $request):
                                                         // Prepare passenger display
-                                                        $passengerDisplay = '----';
-                                                        if (!empty($request['passenger_names'])) {
-                                                            $passengers = json_decode($request['passenger_names'], true);
-                                                            if (is_array($passengers)) {
-                                                                $passengerDisplay = implode(', ', $passengers);
-                                                            } else {
-                                                                $passengerDisplay = $request['passenger_names'];
-                                                            }
-                                                        }
+                                                        $passengerDisplay = format_passenger_names($request['passenger_names']);
 
                                                         // Get vehicle and driver names
                                                         $vehicleName = $request['assigned_vehicle_id'] ? ($vehicleLookup[$request['assigned_vehicle_id']] ?? '----') : '----';
@@ -2015,7 +1928,7 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                         <div class="card border-primary mb-3">
                             <div class="card-body">
                                 <p><strong>Requestor:</strong> <?= htmlspecialchars($passengerRequestDetails['requestor_name'] ?? 'N/A') ?></p>
-                                <p><strong>Status:</strong> <?= getStatusText($passengerRequestDetails['status'] ?? '') ?></p>
+                                <p><strong>Status:</strong> <?= get_status_display_text($passengerRequestDetails['status'] ?? '') ?></p>
                             </div>
                         </div>
                         <p><strong>Do you want to proceed with creating a new request?</strong></p>
@@ -2154,8 +2067,7 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
         </div>
 
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
-        <script src="js/common.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.20/index.global.min.js"></script>
         <script src="js/calendar_utils.js"></script>
         <script>
             const calendarEventsData = <?= json_encode(array_values($calendarEvents), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
@@ -2437,129 +2349,11 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                     el.textContent = value || '----';
                 }
             }
-
-            function formatDateLabel(dateStr) {
-                if (!dateStr) {
-                    return 'Date TBD';
-                }
-                const date = new Date(`${dateStr}T00:00:00`);
-                if (Number.isNaN(date.getTime())) {
-                    return 'Date TBD';
-                }
-                return date.toLocaleDateString(undefined, {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric'
-                });
-            }
-
-            function formatRange(start, end) {
-                if (!start) {
-                    return 'Date TBD';
-                }
-                if (!end || end === start) {
-                    return formatDateLabel(start);
-                }
-                return `${formatDateLabel(start)} - ${formatDateLabel(end)}`;
-            }
-
-            function formatTimestamp(dateTimeStr) {
-                if (!dateTimeStr) {
-                    return '';
-                }
-                const date = new Date(dateTimeStr.replace(' ', 'T'));
-                if (Number.isNaN(date.getTime())) {
-                    return dateTimeStr;
-                }
-                return date.toLocaleString(undefined, {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                    hour: 'numeric',
-                    minute: '2-digit'
-                });
-            }
-
-            function formatActionLabel(action) {
-                if (!action) {
-                    return 'Update';
-                }
-                return action
-                    .toLowerCase()
-                    .split('_')
-                    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-                    .join(' ');
-            }
-
+           
             function populateCalendarModal(details) {
-                if (!details) {
-                    return;
-                }
-                setModalText('calendarModalVehicle', details.vehicle || details.plate || 'Vehicle TBD');
-                setModalText('calendarModalPlate', details.plate || 'Plate TBD');
-                setModalText('calendarModalRequestor', details.requestor || '----');
-                setModalText('calendarModalEmail', details.email || '----');
-                setModalText('calendarModalDestination', details.destination || 'Destination TBD');
-                setModalText('calendarModalDriver', details.driver || 'Pending Assignment');
-                setModalText('calendarModalDates', formatRange(details.start, details.end));
-                setModalText('calendarModalStatus', details.status || 'Approved');
-                setModalText('calendarModalPurpose', details.purpose || '----');
-                setModalText('calendarModalPassengers', details.passengers || '----');
-
-                const auditContainer = document.getElementById('calendarAuditTimeline');
-                if (!auditContainer) {
-                    return;
-                }
-
-                auditContainer.innerHTML = '';
-                if (Array.isArray(details.audit) && details.audit.length) {
-                    details.audit.slice(0, 5).forEach(entry => {
-                        const auditEntry = document.createElement('div');
-                        auditEntry.className = 'audit-entry';
-
-                        const title = document.createElement('div');
-                        title.className = 'audit-entry__title';
-                        title.textContent = formatActionLabel(entry.action);
-                        auditEntry.appendChild(title);
-
-                        const meta = document.createElement('div');
-                        meta.className = 'audit-entry__meta';
-
-                        const actorSpan = document.createElement('span');
-                        const actorIcon = document.createElement('i');
-                        actorIcon.className = 'fas fa-user me-1';
-                        actorSpan.appendChild(actorIcon);
-                        actorSpan.appendChild(document.createTextNode(entry.actor_name || 'System'));
-                        meta.appendChild(actorSpan);
-
-                        const timestampLabel = formatTimestamp(entry.created_at);
-                        if (timestampLabel) {
-                            const timeSpan = document.createElement('span');
-                            const timeIcon = document.createElement('i');
-                            timeIcon.className = 'fas fa-clock me-1';
-                            timeSpan.appendChild(timeIcon);
-                            timeSpan.appendChild(document.createTextNode(timestampLabel));
-                            meta.appendChild(timeSpan);
-                        }
-
-                        auditEntry.appendChild(meta);
-
-                        if (entry.notes) {
-                            const notes = document.createElement('div');
-                            notes.className = 'audit-entry__notes';
-                            notes.textContent = entry.notes;
-                            auditEntry.appendChild(notes);
-                        }
-
-                        auditContainer.appendChild(auditEntry);
-                    });
-                } else {
-                    const emptyState = document.createElement('p');
-                    emptyState.className = 'text-muted small mb-0';
-                    emptyState.textContent = 'No audit activity recorded.';
-                    auditContainer.appendChild(emptyState);
-                }
+            CalendarUtils.populateModal(details, 'calendar')
             }
+
             document.addEventListener('DOMContentLoaded', function() {
                 const adminActionModal = document.getElementById('adminActionModal');
 
@@ -2661,6 +2455,7 @@ $upcomingReservations = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
                 }
             });
         </script>
+        <script src="js/common.js"></script>
 </body>
 
 </html>

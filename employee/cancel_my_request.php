@@ -39,6 +39,27 @@ if (strlen($cancelReason) > 150) {
 $requestId = (int)$_POST['request_id'];
 $userId = $_SESSION['user']['id'];
 
+// Employees can cancel pending requests or approved requests that haven't started yet
+$cancellableStatuses = [
+    'pending_dispatch_assignment',
+    'pending_admin_approval',
+    'rejected_reassign_dispatch'
+];
+
+// For approved requests, check if trip hasn't started yet
+$stmt = $pdo->prepare("SELECT status, departure_date FROM requests WHERE id = :id AND user_id = :user_id");
+$stmt->execute(['id' => $requestId, 'user_id' => $userId]);
+$request = $stmt->fetch(PDO::FETCH_ASSOC);
+
+if ($request && $request['status'] === 'approved') {
+    $departureDate = $request['departure_date'] ?? null;
+    $today = date('Y-m-d');
+    if ($departureDate && $today < $departureDate) {
+        // Trip hasn't started yet, allow cancellation
+        $cancellableStatuses[] = 'approved';
+    }
+}
+
 handle_request_cancellation(
     $pdo,
     $requestId,

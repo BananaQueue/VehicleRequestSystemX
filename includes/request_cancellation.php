@@ -33,7 +33,7 @@ function handle_request_cancellation(PDO $pdo, int $requestId, string $cancelRea
 
         // If there's an assigned vehicle/driver, free them up
         if ($request['assigned_vehicle_id']) {
-            $stmt = $pdo->prepare("UPDATE vehicles SET status = 'available', assigned_to = NULL, driver_name = NULL WHERE id = ?");
+            $stmt = $pdo->prepare("UPDATE vehicles SET status = 'available', assigned_to = NULL, driver_id = NULL WHERE id = ?");
             $stmt->execute([$request['assigned_vehicle_id']]);
         }
 

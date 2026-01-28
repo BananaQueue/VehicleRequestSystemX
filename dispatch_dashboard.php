@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/session.php';
 require_once __DIR__ . '/includes/schedule_utils.php';
-require_once __DIR__ . '/includes/lookup_utils.php';
+require_once __DIR__ . '/includes/lookup_utils.php'; 
 include 'error.php';
 require 'db.php';
 
@@ -13,6 +13,7 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'dispatch') {
 }
 
 $username = $_SESSION['user']['name'] ?? 'Dispatch User';
+$today = date('Y-m-d'); // Define today early for use in queries
 
 // Fetch requests that are pending dispatch assignment
 try {
@@ -156,7 +157,6 @@ try {
         }
     }
 
-    $today = date('Y-m-d');
     foreach ($calendarRequests as $calendarRequest) {
         [$eventStart, $eventEnd] = get_request_date_range($calendarRequest);
         if (!$eventStart) {
@@ -174,15 +174,7 @@ try {
             $eventState = 'active';
         }
 
-        $passengerDisplay = '----';
-        if (!empty($calendarRequest['passenger_names'])) {
-            $decodedPassengers = json_decode($calendarRequest['passenger_names'], true);
-            if (is_array($decodedPassengers)) {
-                $passengerDisplay = implode(', ', $decodedPassengers);
-            } else {
-                $passengerDisplay = $calendarRequest['passenger_names'];
-            }
-        }
+        $passengerDisplay = format_passenger_names($calendarRequest['passenger_names']);
 
         $calendarEvents[] = [
             'id' => $calendarRequest['id'],
@@ -203,7 +195,7 @@ try {
             'purpose' => $calendarRequest['purpose'],
             'start' => $eventStart,
             'end' => $eventEnd,
-            'status' => getStatusTextDispatch($calendarRequest['status']),
+            'status' => get_status_display_text($calendarRequest['status']),
             'driver' => $calendarRequest['driver_name'] ?? 'TBD',
             'passengers' => $passengerDisplay,
             'audit' => $auditLogsByRequest[$calendarRequest['id']] ?? []
@@ -698,105 +690,8 @@ try {
             }
         }
 
-        function dispatchFormatDate(dateStr) {
-            if (!dateStr) return 'Date TBD';
-            const date = new Date(`${dateStr}T00:00:00`);
-            if (Number.isNaN(date.getTime())) return 'Date TBD';
-            return date.toLocaleDateString(undefined, {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric'
-            });
-        }
-
-        function dispatchFormatRange(start, end) {
-            if (!start) return 'Date TBD';
-            if (!end || end === start) return dispatchFormatDate(start);
-            return `${dispatchFormatDate(start)} - ${dispatchFormatDate(end)}`;
-        }
-
-        function dispatchFormatTimestamp(dateTimeStr) {
-            if (!dateTimeStr) return '';
-            const date = new Date(dateTimeStr.replace(' ', 'T'));
-            if (Number.isNaN(date.getTime())) return dateTimeStr;
-            return date.toLocaleString(undefined, {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-                hour: 'numeric',
-                minute: '2-digit'
-            });
-        }
-
-        function dispatchFormatActionLabel(action) {
-            if (!action) return 'Update';
-            return action.toLowerCase().split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-        }
-
         function populateDispatchModal(details) {
-            if (!details) return;
-            dispatchSetText('dispatchModalVehicle', details.vehicle || details.plate || 'Vehicle TBD');
-            dispatchSetText('dispatchModalPlate', details.plate || 'Plate TBD');
-            dispatchSetText('dispatchModalRequestor', details.requestor || '----');
-            dispatchSetText('dispatchModalEmail', details.email || '----');
-            dispatchSetText('dispatchModalDestination', details.destination || 'Destination TBD');
-            dispatchSetText('dispatchModalDriver', details.driver || 'Pending Assignment');
-            dispatchSetText('dispatchModalDates', dispatchFormatRange(details.start, details.end));
-            dispatchSetText('dispatchModalStatus', details.status || 'Approved');
-            dispatchSetText('dispatchModalPurpose', details.purpose || '----');
-            dispatchSetText('dispatchModalPassengers', details.passengers || '----');
-
-            const auditContainer = document.getElementById('dispatchAuditTimeline');
-            if (!auditContainer) return;
-            auditContainer.innerHTML = '';
-
-            if (Array.isArray(details.audit) && details.audit.length) {
-                details.audit.slice(0, 5).forEach(entry => {
-                    const auditEntry = document.createElement('div');
-                    auditEntry.className = 'audit-entry';
-
-                    const title = document.createElement('div');
-                    title.className = 'audit-entry__title';
-                    title.textContent = dispatchFormatActionLabel(entry.action);
-                    auditEntry.appendChild(title);
-
-                    const meta = document.createElement('div');
-                    meta.className = 'audit-entry__meta';
-
-                    const actorSpan = document.createElement('span');
-                    const actorIcon = document.createElement('i');
-                    actorIcon.className = 'fas fa-user me-1';
-                    actorSpan.appendChild(actorIcon);
-                    actorSpan.appendChild(document.createTextNode(entry.actor_name || 'System'));
-                    meta.appendChild(actorSpan);
-
-                    const timestampLabel = dispatchFormatTimestamp(entry.created_at);
-                    if (timestampLabel) {
-                        const timeSpan = document.createElement('span');
-                        const timeIcon = document.createElement('i');
-                        timeIcon.className = 'fas fa-clock me-1';
-                        timeSpan.appendChild(timeIcon);
-                        timeSpan.appendChild(document.createTextNode(timestampLabel));
-                        meta.appendChild(timeSpan);
-                    }
-
-                    auditEntry.appendChild(meta);
-
-                    if (entry.notes) {
-                        const notes = document.createElement('div');
-                        notes.className = 'audit-entry__notes';
-                        notes.textContent = entry.notes;
-                        auditEntry.appendChild(notes);
-                    }
-
-                    auditContainer.appendChild(auditEntry);
-                });
-            } else {
-                const emptyState = document.createElement('p');
-                emptyState.className = 'text-muted small mb-0';
-                emptyState.textContent = 'No audit activity recorded.';
-                auditContainer.appendChild(emptyState);
-            }
+            CalendarUtils.populateModal(details, 'dispatch');
         }
     </script>
 </body>
